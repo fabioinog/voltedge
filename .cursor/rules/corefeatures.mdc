@@ -1,0 +1,70 @@
+# This part will list all the "CORE" features of the program. This means that these features are what we will focus on, but it is not necessarily limited to these or are fixed like this.
+
+# Only use this as a reference, not everything is needed, I just need you to keep these things in mind:
+
+## The core features are:
+
+1) Dependency-Aware City Map (Not just pins and polygons)
+
+    -VoltEdge maps functional dependency, not just geography.
+        It links:
+            substations → feeders → critical facilities
+            power → pumps → water pressure zones
+            water supply → shelters → population blocks
+
+
+    Result: the map represents how the city actually behaves under failure.
+    This is: “This hospital is red because Pump P3 lost power.”
+    Not: “This hospital is red because it’s in a red area.”
+    -Forecasts on the map will be based from both public data and user contribution.
+    
+2) Cascading Failure Simulation (“What fails next?”)
+    -With partial damage data, VoltEdge predicts second-order failures.
+    -Example cascade:
+    Substation A down → Feeder F2 dead → Pump Station P3 offline → Zone 4 water pressure collapse → Hospital loses sterilization + dialysis water
+    -This is the difference between reactive mapping and predictive operations.
+
+3) Intervention Ranking Engine (Top fixes, not more visuals)
+    -This is VoltEdge’s core differentiator. It produces a live-ranked list like:
+        Top Actions Right Now
+            #1 Restore Feeder F2 → Reactivates Pump P3 → restores water for ~120k people + 2 hospitals
+            #2 Deploy generator to Well W1 → restores survival water to 40k people in <1 hour
+            #3 Repair Valve Junction V7 → restores shelter access + reduces contamination risk
+        Every action has:
+            estimated people impacted
+            critical facilities restored
+            estimated time/cost level
+            “confidence rating” based on data completeness
+
+
+        -VoltEdge is not a “map tool.”
+        -It’s a decision tool that uses a map.
+
+4) Minimum Survival Water Mode (LifeLines-style output)
+    VoltEdge supports humanitarian thresholds by design.
+    It can model service restoration in terms of:
+    3 L/person/day (survival floor)
+    7 L/person/day (emergency access level)
+    15 L/person/day (minimum humanitarian standard target)
+
+
+    Instead of “outage coverage,” it answers:
+        “Which repair gets the most people above the survival threshold fastest?”
+        That’s not generic — that’s human-impact optimized.
+
+5) Facility Collapse Timers (Hospitals don’t fail instantly)
+    VoltEdge estimates time-to-failure for critical sites:
+    time until water storage runs dry
+    time until backup generators fail
+    time until services become unsafe (ICU, maternity, dialysis, sterilization)
+
+
+    This creates urgency with precision:
+    “Shelter S2 becomes non-functional in 5 hours unless Pump P3 is restored.”
+    Maps rarely include time.
+    VoltEdge does — and that’s a big deal.
+
+
+
+
+ 

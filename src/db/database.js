@@ -1,0 +1,263 @@
+/**
+ * Database layer for VoltEdge
+ * Provides SQLite database abstraction with offline-first support
+ * Compatible with web and mobile platforms via expo-sqlite
+ */
+
+import * as SQLite from 'expo-sqlite';
+
+let db = null;
+
+/**
+ * Initialize the database connection
+ * @returns {Promise<SQLite.SQLiteDatabase>} Database instance
+ */
+export const initDatabase = async () => {
+  try {
+    if (db) {
+      return db;
+    }
+
+    // Open database (creates if doesn't exist)
+    db = await SQLite.openDatabaseAsync('voltedge.db');
+    
+    // Run schema initialization
+    await createSchema();
+    
+    return db;
+  } catch (error) {
+    console.error('Database initialization error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Create database schema and tables
+ * Handles infrastructure assets, dependencies, failures, and interventions
+ */
+const createSchema = async () => {
+  if (!db) {
+    throw new Error('Database not initialized');
+  }
+
+  try {
+    // Infrastructure Assets table
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS infrastructure_assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        type TEXT NOT NULL CHECK(type IN ('power', 'water', 'facility')),
+        location_lat REAL,
+        location_lng REAL,
+        status TEXT NOT NULL DEFAULT 'operational' CHECK(status IN ('operational', 'failed', 'at_risk')),
+        priority INTEGER DEFAULT 0,
+        population_served INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+
+    // Dependencies table (represents cascading failure relationships)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS dependencies (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        dependent_asset_id INTEGER NOT NULL,
+        depends_on_asset_id INTEGER NOT NULL,
+        dependency_type TEXT NOT NULL CHECK(dependency_type IN ('power', 'water', 'critical')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (dependent_asset_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE,
+        FOREIGN KEY (depends_on_asset_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE,
+        UNIQUE(dependent_asset_id, depends_on_asset_id)
+      );
+    `);
+
+    // Failure Events table
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS failure_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL,
+        failure_type TEXT NOT NULL,
+        reported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        severity INTEGER DEFAULT 1 CHECK(severity >= 1 AND severity <= 5),
+        description TEXT,
+        reported_by TEXT,
+        verified BOOLEAN DEFAULT 0,
+        FOREIGN KEY (asset_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Interventions table (repair actions)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS interventions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL,
+        priority_score REAL DEFAULT 0,
+        estimated_hours REAL,
+        crew_assigned TEXT,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'in_progress', 'completed', 'cancelled')),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        started_at DATETIME,
+        completed_at DATETIME,
+        FOREIGN KEY (asset_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Facility Collapse Timers table
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS facility_timers (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        facility_id INTEGER NOT NULL,
+        timer_type TEXT NOT NULL CHECK(timer_type IN ('water', 'power', 'both')),
+        hours_remaining REAL NOT NULL,
+        critical_threshold REAL NOT NULL,
+        last_updated DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (facility_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Sync Status table (for offline sync management)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS sync_status (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL UNIQUE,
+        last_synced_at DATETIME,
+        pending_changes INTEGER DEFAULT 0
+      );
+    `);
+
+    // Create indexes for performance
+    await db.execAsync(`
+      CREATE INDEX IF NOT EXISTS idx_assets_type_status ON infrastructure_assets(type, status);
+      CREATE INDEX IF NOT EXISTS idx_assets_location ON infrastructure_assets(location_lat, location_lng);
+      CREATE INDEX IF NOT EXISTS idx_dependencies_dependent ON dependencies(dependent_asset_id);
+      CREATE INDEX IF NOT EXISTS idx_dependencies_depends_on ON dependencies(depends_on_asset_id);
+      CREATE INDEX IF NOT EXISTS idx_failures_asset ON failure_events(asset_id);
+      CREATE INDEX IF NOT EXISTS idx_interventions_priority ON interventions(priority_score DESC);
+      CREATE INDEX IF NOT EXISTS idx_interventions_status ON interventions(status);
+    `);
+
+    // Initialize sync status
+    await db.execAsync(`
+      INSERT OR IGNORE INTO sync_status (table_name, last_synced_at, pending_changes)
+      VALUES 
+        ('infrastructure_assets', NULL, 0),
+        ('dependencies', NULL, 0),
+        ('failure_events', NULL, 0),
+        ('interventions', NULL, 0),
+        ('facility_timers', NULL, 0);
+    `);
+
+    console.log('Database schema initialized successfully');
+  } catch (error) {
+    console.error('Schema creation error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Get database instance (initialize if needed)
+ * @returns {Promise<SQLite.SQLiteDatabase>} Database instance
+ */
+export const getDatabase = async () => {
+  if (!db) {
+    await initDatabase();
+  }
+  return db;
+};
+
+/**
+ * Execute a query with error handling and retry logic
+ * @param {string} query - SQL query string
+ * @param {Array} params - Query parameters
+ * @returns {Promise<any>} Query result
+ */
+export const executeQuery = async (query, params = []) => {
+  try {
+    const database = await getDatabase();
+    return await database.getAllAsync(query, params);
+  } catch (error) {
+    console.error('Query execution error:', error);
+    // Retry once on transient failures
+    try {
+      const database = await getDatabase();
+      return await database.getAllAsync(query, params);
+    } catch (retryError) {
+      console.error('Query retry failed:', retryError);
+      throw retryError;
+    }
+  }
+};
+
+/**
+ * Execute a write operation (INSERT, UPDATE, DELETE)
+ * @param {string} query - SQL query string
+ * @param {Array} params - Query parameters
+ * @returns {Promise<SQLite.SQLiteRunResult>} Execution result
+ */
+export const executeWrite = async (query, params = []) => {
+  try {
+    const database = await getDatabase();
+    const result = await database.runAsync(query, params);
+    
+    // Mark table as having pending changes for sync
+    const tableName = extractTableName(query);
+    if (tableName) {
+      await markPendingSync(tableName);
+    }
+    
+    return result;
+  } catch (error) {
+    console.error('Write execution error:', error);
+    throw error;
+  }
+};
+
+/**
+ * Extract table name from SQL query for sync tracking
+ * @param {string} query - SQL query
+ * @returns {string|null} Table name or null
+ */
+const extractTableName = (query) => {
+  const match = query.match(/(?:INSERT|UPDATE|DELETE)\s+(?:INTO|FROM)\s+(\w+)/i);
+  return match ? match[1] : null;
+};
+
+/**
+ * Mark a table as having pending sync changes
+ * @param {string} tableName - Name of the table
+ */
+const markPendingSync = async (tableName) => {
+  try {
+    const database = await getDatabase();
+    await database.runAsync(
+      'UPDATE sync_status SET pending_changes = pending_changes + 1 WHERE table_name = ?',
+      [tableName]
+    );
+  } catch (error) {
+    console.error('Sync status update error:', error);
+    // Non-critical, don't throw
+  }
+};
+
+/**
+ * Reset database (for testing/development)
+ * WARNING: This deletes all data
+ */
+export const resetDatabase = async () => {
+  try {
+    const database = await getDatabase();
+    await database.execAsync(`
+      DROP TABLE IF EXISTS facility_timers;
+      DROP TABLE IF EXISTS interventions;
+      DROP TABLE IF EXISTS failure_events;
+      DROP TABLE IF EXISTS dependencies;
+      DROP TABLE IF EXISTS infrastructure_assets;
+      DROP TABLE IF EXISTS sync_status;
+    `);
+    await createSchema();
+    console.log('Database reset complete');
+  } catch (error) {
+    console.error('Database reset error:', error);
+    throw error;
+  }
+};

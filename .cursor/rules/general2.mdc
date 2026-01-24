@@ -1,0 +1,40 @@
+---
+alwaysApply: true
+---
+# This program is called VoltEdge
+We are making a program (a field-ready decision) that helps responders map water and electricity disruptions and turn them into ranked intervention actions. Most apps will show “where things are broken”, while our program shows what breaks next, who is at risk, and which repair restores the most service per hour. This should be built for chaotic environments: incomplete data, uncertain damage reports, limited repair crews, and low connectivity.  So it is crucial that our program is easily accessible by people in areas that are heavily underdeveloped. Take all of this.  Now for the technology, we will be using Expo React Native and Expo-sqlite for both web and app implementation.  Tell me install instructions for both of these if needed. After that, setup an easy local testing environment for both web and app (for the app part, make something that can compile everything into an apk). Also, you can use packages, libraries, and apis, any you want but make sure to provide install instructions. Now, these are the problems that this program will solve:
+When water and power systems fail together, responders face a brutal reality:
+outages spread through dependencies (not distance)
+fixing the wrong asset wastes time
+hospitals and shelters collapse quietly (because it’s not always visible)
+VoltEdge turns infrastructure damage into a prioritized response plan.
+Here are the key capabilities of “VoltEdge”
+Dependency-Aware City Map
+Cascading Failure System
+Intervention Ranking Engine – point system based on the actual impact, power failure here
+Minimum Survival Water Mode
+Faculty-Collapse Timers
+Offline Functionality (mostly)
+For the offline functionality part, make sure there still a way to connect to databases for updates
+
+
+
+
+We are making a program (a field-ready decision) that helps responders map water and electricity disruptions and turn them into ranked intervention actions. Most apps will show “where things are broken”, while our program shows what breaks next, who is at risk, and which repair restores the most service per hour. This should be built for chaotic environments: incomplete data, uncertain damage reports, limited repair crews, and low connectivity.  So it is crucial that our program is easily accessible by people in areas that are heavily underdeveloped. Take all of this.  Now for the technology, we will be using Expo React Native and Expo-sqlite for both web and app implementation.  Tell me install instructions for both of these if needed. After that, setup an easy local testing environment for both web and app (for the app part, make something that can compile everything into an apk). Also, you can use packages, libraries, and apis, any you want but make sure to provide install instructions. Now, these are the problems that this program will solve:
+When water and power systems fail together, responders face a brutal reality:
+outages spread through dependencies (not distance)
+fixing the wrong asset wastes time
+hospitals and shelters collapse quietly (because it’s not always visible)
+VoltEdge turns infrastructure damage into a prioritized response plan.
+Here are the key capabilities of “VoltEdge”
+Dependency-Aware City Map
+Cascading Failure System
+Intervention Ranking Engine – point system based on the actual impact, power failure here
+Minimum Survival Water Mode
+Faculty-Collapse Timers
+Offline Functionality (mostly)
+For the offline functionality part, make sure there still a way to connect to databases for updates
+
+
+
+

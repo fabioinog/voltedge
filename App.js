@@ -7,9 +7,10 @@ import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { View, Text, StyleSheet, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { initDatabase } from './src/db/database';
 import HomeScreen from './src/screens/HomeScreen';
+import MapScreen from './src/screens/MapScreen';
 
 const Stack = createNativeStackNavigator();
 
@@ -46,13 +47,31 @@ const App = () => {
   }
 
   if (initError) {
+    const isWebDatabaseError = initError.includes('constructor') || initError.includes('NativeDatabase');
+    
     return (
       <View style={styles.errorContainer}>
         <Text style={styles.errorTitle}>Initialization Error</Text>
         <Text style={styles.errorText}>{initError}</Text>
-        <Text style={styles.errorHint}>
-          Please restart the app. If the problem persists, clear app data.
-        </Text>
+        {isWebDatabaseError ? (
+          <>
+            <Text style={styles.errorHint}>
+              This is a web database loading issue. Try:
+            </Text>
+            <Text style={styles.errorSteps}>
+              1. Hard refresh: Ctrl+F5 (Windows) or Cmd+Shift+R (Mac){'\n'}
+              2. Clear browser cache{'\n'}
+              3. Restart server: npx expo start --web --clear
+            </Text>
+            <Text style={styles.errorHint}>
+              See WEB_DATABASE_FIX.md for detailed instructions.
+            </Text>
+          </>
+        ) : (
+          <Text style={styles.errorHint}>
+            Please restart the app. If the problem persists, clear app data.
+          </Text>
+        )}
       </View>
     );
   }
@@ -61,7 +80,7 @@ const App = () => {
     <NavigationContainer>
       <StatusBar style="auto" />
       <Stack.Navigator
-        initialRouteName="Home"
+        initialRouteName="Map"
         screenOptions={{
           headerStyle: {
             backgroundColor: '#0066cc',
@@ -77,6 +96,14 @@ const App = () => {
           component={HomeScreen}
           options={{
             title: 'VoltEdge',
+          }}
+        />
+        <Stack.Screen
+          name="Map"
+          component={MapScreen}
+          options={{
+            title: 'Sudan Map',
+            headerShown: false, // Hide header for full-screen map
           }}
         />
       </Stack.Navigator>
@@ -119,6 +146,15 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     textAlign: 'center',
+    marginTop: 8,
+  },
+  errorSteps: {
+    fontSize: 12,
+    color: '#333333',
+    textAlign: 'left',
+    marginTop: 12,
+    marginHorizontal: 24,
+    fontFamily: Platform.OS === 'web' ? 'monospace' : 'monospace',
   },
 });
 

@@ -4,13 +4,15 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
 import { executeQuery } from '../db/database';
 
 /**
  * Home Screen Component
  */
 const HomeScreen = () => {
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalAssets: 0,
@@ -115,6 +117,13 @@ const HomeScreen = () => {
           <Text style={styles.statLabel}>Pending Actions</Text>
         </View>
       </View>
+
+      <Pressable
+        style={styles.mapButton}
+        onPress={() => navigation.navigate('Map')}
+      >
+        <Text style={styles.mapButtonText}>View Map</Text>
+      </Pressable>
 
       <View style={styles.infoSection}>
         <Text style={styles.infoTitle}>Key Capabilities</Text>
@@ -225,6 +234,23 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#666666',
     textAlign: 'center',
+  },
+  mapButton: {
+    backgroundColor: '#0066cc',
+    padding: 16,
+    borderRadius: 8,
+    marginBottom: 24,
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  mapButtonText: {
+    color: '#ffffff',
+    fontSize: 18,
+    fontWeight: 'bold',
   },
   infoSection: {
     backgroundColor: '#ffffff',

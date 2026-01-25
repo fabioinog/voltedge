@@ -4,9 +4,29 @@
  * Compatible with web and mobile platforms via expo-sqlite
  */
 
-import * as SQLite from 'expo-sqlite';
+import { Platform } from 'react-native';
+import { initWebDatabase, executeQueryWeb, executeWriteWeb } from './webDatabase';
 
+// Import expo-sqlite with web compatibility handling
+let SQLite = null;
 let db = null;
+let useWebFallback = false;
+
+try {
+  // Try standard import
+  SQLite = require('expo-sqlite');
+  // Handle both default and named exports
+  if (SQLite.default) {
+    SQLite = SQLite.default;
+  }
+} catch (error) {
+  console.warn('Error importing expo-sqlite:', error);
+}
+
+// On web, try to use IndexedDB fallback if expo-sqlite fails
+if (Platform.OS === 'web') {
+  useWebFallback = true;
+}
 
 /**
  * Initialize the database connection
@@ -14,16 +34,63 @@ let db = null;
  */
 export const initDatabase = async () => {
   try {
-    if (db) {
+    if (db && !useWebFallback) {
       return db;
     }
 
-    // Open database (creates if doesn't exist)
+    // On web, try expo-sqlite first, fallback to IndexedDB if it fails
+    if (Platform.OS === 'web') {
+      try {
+        // Try to use expo-sqlite
+        if (!SQLite) {
+          const sqliteModule = require('expo-sqlite');
+          SQLite = sqliteModule.default || sqliteModule;
+        }
+
+        if (SQLite && typeof SQLite.openDatabaseAsync === 'function') {
+          await new Promise(resolve => setTimeout(resolve, 100));
+          db = await SQLite.openDatabaseAsync('voltedge.db');
+          await createSchema();
+          useWebFallback = false;
+          return db;
+        }
+      } catch (sqliteError) {
+        console.warn('expo-sqlite failed on web, using IndexedDB fallback:', sqliteError.message);
+        // Fall through to IndexedDB
+      }
+
+      // Use IndexedDB fallback for web
+      try {
+        await initWebDatabase();
+        await createSchemaWeb();
+        useWebFallback = true;
+        console.log('Using IndexedDB fallback for web database');
+        return { _isWebFallback: true };
+      } catch (indexedDBError) {
+        throw new Error(
+          'Both expo-sqlite and IndexedDB failed. ' +
+          'Please ensure your browser supports IndexedDB.'
+        );
+      }
+    }
+
+    // Native platforms use expo-sqlite
+    if (!SQLite) {
+      const sqliteModule = require('expo-sqlite');
+      SQLite = sqliteModule.default || sqliteModule;
+    }
+
+    if (typeof SQLite.openDatabaseAsync !== 'function') {
+      if (SQLite.default && typeof SQLite.default.openDatabaseAsync === 'function') {
+        SQLite = SQLite.default;
+      } else {
+        throw new Error('expo-sqlite openDatabaseAsync method not found');
+      }
+    }
+
     db = await SQLite.openDatabaseAsync('voltedge.db');
-    
-    // Run schema initialization
     await createSchema();
-    
+    useWebFallback = false;
     return db;
   } catch (error) {
     console.error('Database initialization error:', error);
@@ -36,22 +103,38 @@ export const initDatabase = async () => {
  * Handles infrastructure assets, dependencies, failures, and interventions
  */
 const createSchema = async () => {
+  if (useWebFallback) {
+    // Schema is created in initWebDatabase
+    await createSchemaWeb();
+    return;
+  }
+
   if (!db) {
     throw new Error('Database not initialized');
   }
 
   try {
-    // Infrastructure Assets table
+    // Infrastructure Assets table (updated for facilities)
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS infrastructure_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('power', 'water', 'facility')),
-        location_lat REAL,
-        location_lng REAL,
+        type TEXT NOT NULL CHECK(type IN ('power', 'water', 'shelter', 'food')),
+        location_lat REAL NOT NULL,
+        location_lng REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'operational' CHECK(status IN ('operational', 'failed', 'at_risk')),
-        priority INTEGER DEFAULT 0,
-        population_served INTEGER DEFAULT 0,
+        facility_condition TEXT DEFAULT 'good' CHECK(facility_condition IN ('excellent', 'good', 'fair', 'poor', 'bad')),
+        supply_amount TEXT DEFAULT 'medium' CHECK(supply_amount IN ('very_high', 'high', 'medium', 'low', 'very_low')),
+        population_amount TEXT DEFAULT 'medium' CHECK(population_amount IN ('very_high', 'high', 'medium', 'low', 'very_low')),
+        facility_importance TEXT DEFAULT 'moderate' CHECK(facility_importance IN ('very_important', 'important', 'moderate', 'not_important')),
+        intervention_points REAL DEFAULT 0,
+        people_restored INTEGER DEFAULT 0,
+        urgency_hours REAL DEFAULT 0,
+        effort_penalty REAL DEFAULT 1.0,
+        cascade_prevention_count INTEGER DEFAULT 0,
+        water_level_forecast REAL,
+        power_outage_detected BOOLEAN DEFAULT 0,
+        last_forecast_update DATETIME,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
@@ -115,6 +198,35 @@ const createSchema = async () => {
       );
     `);
 
+    // User Reports table (for user contributions)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS user_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        facility_id INTEGER NOT NULL,
+        facility_condition TEXT CHECK(facility_condition IN ('excellent', 'good', 'fair', 'poor', 'bad')),
+        supply_amount TEXT CHECK(supply_amount IN ('very_high', 'high', 'medium', 'low', 'very_low')),
+        population_amount TEXT CHECK(population_amount IN ('very_high', 'high', 'medium', 'low', 'very_low')),
+        facility_importance TEXT CHECK(facility_importance IN ('very_important', 'important', 'moderate', 'not_important')),
+        reported_by TEXT,
+        reported_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        synced BOOLEAN DEFAULT 0,
+        FOREIGN KEY (facility_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE
+      );
+    `);
+
+    // Public Data Cache table (for offline API data)
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS public_data_cache (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        facility_id INTEGER,
+        data_type TEXT NOT NULL,
+        data_json TEXT NOT NULL,
+        fetched_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        expires_at DATETIME,
+        FOREIGN KEY (facility_id) REFERENCES infrastructure_assets(id) ON DELETE CASCADE
+      );
+    `);
+
     // Sync Status table (for offline sync management)
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS sync_status (
@@ -134,6 +246,10 @@ const createSchema = async () => {
       CREATE INDEX IF NOT EXISTS idx_failures_asset ON failure_events(asset_id);
       CREATE INDEX IF NOT EXISTS idx_interventions_priority ON interventions(priority_score DESC);
       CREATE INDEX IF NOT EXISTS idx_interventions_status ON interventions(status);
+      CREATE INDEX IF NOT EXISTS idx_assets_intervention_points ON infrastructure_assets(intervention_points DESC);
+      CREATE INDEX IF NOT EXISTS idx_user_reports_facility ON user_reports(facility_id);
+      CREATE INDEX IF NOT EXISTS idx_user_reports_synced ON user_reports(synced);
+      CREATE INDEX IF NOT EXISTS idx_public_data_facility ON public_data_cache(facility_id);
     `);
 
     // Initialize sync status
@@ -144,7 +260,9 @@ const createSchema = async () => {
         ('dependencies', NULL, 0),
         ('failure_events', NULL, 0),
         ('interventions', NULL, 0),
-        ('facility_timers', NULL, 0);
+        ('facility_timers', NULL, 0),
+        ('user_reports', NULL, 0),
+        ('public_data_cache', NULL, 0);
     `);
 
     console.log('Database schema initialized successfully');
@@ -159,10 +277,36 @@ const createSchema = async () => {
  * @returns {Promise<SQLite.SQLiteDatabase>} Database instance
  */
 export const getDatabase = async () => {
-  if (!db) {
+  if (!db && !useWebFallback) {
     await initDatabase();
   }
+  if (useWebFallback) {
+    return { _isWebFallback: true };
+  }
   return db;
+};
+
+/**
+ * Create schema for web (IndexedDB) - simplified version
+ */
+const createSchemaWeb = async () => {
+  // Schema is created in initWebDatabase
+  // Just ensure sync_status is initialized
+  try {
+    const existing = await executeQueryWeb('SELECT * FROM sync_status WHERE table_name = ?', ['infrastructure_assets']);
+    if (existing.length === 0) {
+      // Initialize sync status records
+      const tables = ['infrastructure_assets', 'dependencies', 'failure_events', 'interventions', 'facility_timers', 'user_reports', 'public_data_cache'];
+      for (const table of tables) {
+        await executeWriteWeb(
+          'INSERT INTO sync_status (table_name, last_synced_at, pending_changes) VALUES (?, ?, ?)',
+          [table, null, 0]
+        );
+      }
+    }
+  } catch (error) {
+    console.warn('Schema initialization warning:', error);
+  }
 };
 
 /**
@@ -173,12 +317,18 @@ export const getDatabase = async () => {
  */
 export const executeQuery = async (query, params = []) => {
   try {
+    if (useWebFallback) {
+      return await executeQueryWeb(query, params);
+    }
     const database = await getDatabase();
     return await database.getAllAsync(query, params);
   } catch (error) {
     console.error('Query execution error:', error);
     // Retry once on transient failures
     try {
+      if (useWebFallback) {
+        return await executeQueryWeb(query, params);
+      }
       const database = await getDatabase();
       return await database.getAllAsync(query, params);
     } catch (retryError) {
@@ -196,6 +346,15 @@ export const executeQuery = async (query, params = []) => {
  */
 export const executeWrite = async (query, params = []) => {
   try {
+    if (useWebFallback) {
+      const result = await executeWriteWeb(query, params);
+      // Mark table as having pending changes for sync
+      const tableName = extractTableName(query);
+      if (tableName) {
+        await markPendingSync(tableName);
+      }
+      return result;
+    }
     const database = await getDatabase();
     const result = await database.runAsync(query, params);
     
@@ -228,6 +387,18 @@ const extractTableName = (query) => {
  */
 const markPendingSync = async (tableName) => {
   try {
+    if (useWebFallback) {
+      // Get current status
+      const status = await executeQueryWeb('SELECT * FROM sync_status WHERE table_name = ?', [tableName]);
+      if (status.length > 0) {
+        const current = status[0].pending_changes || 0;
+        await executeWriteWeb(
+          'UPDATE sync_status SET pending_changes = ? WHERE table_name = ?',
+          [current + 1, tableName]
+        );
+      }
+      return;
+    }
     const database = await getDatabase();
     await database.runAsync(
       'UPDATE sync_status SET pending_changes = pending_changes + 1 WHERE table_name = ?',
@@ -245,6 +416,11 @@ const markPendingSync = async (tableName) => {
  */
 export const resetDatabase = async () => {
   try {
+    if (useWebFallback) {
+      // For IndexedDB, we'd need to delete and recreate the database
+      console.warn('Database reset not fully supported with IndexedDB fallback');
+      return;
+    }
     const database = await getDatabase();
     await database.execAsync(`
       DROP TABLE IF EXISTS facility_timers;

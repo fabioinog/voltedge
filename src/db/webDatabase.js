@@ -289,6 +289,56 @@ const writeIndexedDB = async (query, params = []) => {
     return await executeWriteIndexedDB('update', tableName, updated);
   }
 
+  // DELETE
+  if (lowerQuery.startsWith('delete')) {
+    const fromMatch = query.match(/from\s+(\w+)/i);
+    if (!fromMatch) throw new Error('Invalid DELETE query');
+
+    const tableName = fromMatch[1];
+    
+    // DELETE FROM table (no WHERE clause - delete all)
+    if (!query.match(/where/i)) {
+      // Clear all records from the object store
+      return new Promise((resolve, reject) => {
+        if (!db) {
+          reject(new Error('Database not initialized'));
+          return;
+        }
+
+        const transaction = db.transaction([tableName], 'readwrite');
+        const store = transaction.objectStore(tableName);
+        const request = store.clear();
+
+        request.onsuccess = () => {
+          resolve({ changes: 0 }); // We don't track exact count
+        };
+
+        request.onerror = () => {
+          reject(new Error('DELETE failed'));
+        };
+      });
+    }
+
+    // DELETE FROM table WHERE field = ?
+    const whereMatch = query.match(/where\s+(\w+)\s*=\s*\?/i);
+    if (whereMatch && params.length > 0) {
+      const whereField = whereMatch[1];
+      const whereValue = params[0];
+      
+      // Get records to delete
+      const toDelete = await executeQueryIndexedDB(tableName, item => item[whereField] === whereValue);
+      
+      // Delete each record
+      for (const record of toDelete) {
+        await executeWriteIndexedDB('delete', tableName, null, record.id);
+      }
+      
+      return { changes: toDelete.length };
+    }
+
+    throw new Error('DELETE requires WHERE clause or no clause for delete all');
+  }
+
   throw new Error('Unsupported query type: ' + query.substring(0, 50));
 };
 

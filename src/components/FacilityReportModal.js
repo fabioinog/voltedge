@@ -13,11 +13,36 @@ import {
   ScrollView,
   TextInput,
 } from 'react-native';
-
 /**
  * Facility Report Modal Component
  */
 const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
+  // Translation helper - returns English text directly
+  const t = (key) => {
+    const translations = {
+      excellent: 'Excellent',
+      good: 'Good',
+      fair: 'Fair',
+      poor: 'Poor',
+      bad: 'Bad',
+      veryHigh: 'Very High',
+      high: 'High',
+      medium: 'Medium',
+      low: 'Low',
+      veryLow: 'Very Low',
+      veryImportant: 'Very Important',
+      important: 'Important',
+      moderate: 'Moderate',
+      notImportant: 'Not Important',
+      reportProblem: 'Report Problem',
+      facilityCondition: 'Facility Condition',
+      populationAmount: 'Population Amount',
+      facilityImportance: 'Facility Importance',
+      cancel: 'Cancel',
+      submitReport: 'Submit Report',
+    };
+    return translations[key] || key;
+  };
   const [facilityCondition, setFacilityCondition] = useState(facility?.facility_condition || 'good');
   const [supplyAmount, setSupplyAmount] = useState(facility?.supply_amount || 'medium');
   const [populationAmount, setPopulationAmount] = useState(facility?.population_amount || 'medium');
@@ -26,7 +51,7 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
   const handleSubmit = () => {
     const reportData = {
       facilityCondition,
-      supplyAmount: facility.type === 'shelter' || facility.type === 'food' ? supplyAmount : null,
+      supplyAmount: facility.type === 'shelter' || facility.type === 'food' || facility.type === 'water' ? supplyAmount : null,
       populationAmount: facility.type === 'shelter' ? populationAmount : null,
       facilityImportance,
     };
@@ -35,26 +60,26 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
   };
 
   const conditionOptions = [
-    { value: 'excellent', label: 'Excellent' },
-    { value: 'good', label: 'Good' },
-    { value: 'fair', label: 'Fair' },
-    { value: 'poor', label: 'Poor' },
-    { value: 'bad', label: 'Bad' },
+    { value: 'excellent', label: t('excellent') },
+    { value: 'good', label: t('good') },
+    { value: 'fair', label: t('fair') },
+    { value: 'poor', label: t('poor') },
+    { value: 'bad', label: t('bad') },
   ];
 
   const amountOptions = [
-    { value: 'very_high', label: 'Very High' },
-    { value: 'high', label: 'High' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'low', label: 'Low' },
-    { value: 'very_low', label: 'Very Low' },
+    { value: 'very_high', label: t('veryHigh') },
+    { value: 'high', label: t('high') },
+    { value: 'medium', label: t('medium') },
+    { value: 'low', label: t('low') },
+    { value: 'very_low', label: t('veryLow') },
   ];
 
   const importanceOptions = [
-    { value: 'very_important', label: 'Very Important' },
-    { value: 'important', label: 'Important' },
-    { value: 'moderate', label: 'Moderate' },
-    { value: 'not_important', label: 'Not Important' },
+    { value: 'very_important', label: t('veryImportant') },
+    { value: 'important', label: t('important') },
+    { value: 'moderate', label: t('moderate') },
+    { value: 'not_important', label: t('notImportant') },
   ];
 
   return (
@@ -66,13 +91,13 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
     >
       <View style={styles.overlay}>
         <View style={styles.modalContent}>
-          <Text style={styles.title}>Report Problem</Text>
+          <Text style={styles.title}>{t('reportProblem')}</Text>
           <Text style={styles.subtitle}>{facility?.name}</Text>
 
           <ScrollView style={styles.scrollView}>
             {/* Facility Condition */}
             <View style={styles.section}>
-              <Text style={styles.label}>Facility Condition</Text>
+              <Text style={styles.label}>{t('facilityCondition')}</Text>
               <View style={styles.optionsContainer}>
                 {conditionOptions.map((option) => (
                   <Pressable
@@ -127,7 +152,7 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
             {/* Population Amount (only for shelters) */}
             {facility?.type === 'shelter' && (
               <View style={styles.section}>
-                <Text style={styles.label}>Population Amount</Text>
+                <Text style={styles.label}>{t('populationAmount')}</Text>
                 <View style={styles.optionsContainer}>
                   {amountOptions.map((option) => (
                     <Pressable
@@ -154,7 +179,7 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
 
             {/* Facility Importance */}
             <View style={styles.section}>
-              <Text style={styles.label}>Facility Importance</Text>
+              <Text style={styles.label}>{t('facilityImportance')}</Text>
               <View style={styles.optionsContainer}>
                 {importanceOptions.map((option) => (
                   <Pressable
@@ -181,10 +206,10 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
 
           <View style={styles.buttonContainer}>
             <Pressable style={styles.cancelButton} onPress={onClose}>
-              <Text style={styles.cancelButtonText}>Cancel</Text>
+              <Text style={styles.cancelButtonText}>{t('cancel')}</Text>
             </Pressable>
             <Pressable style={styles.submitButton} onPress={handleSubmit}>
-              <Text style={styles.submitButtonText}>Submit Report</Text>
+              <Text style={styles.submitButtonText}>{t('submitReport')}</Text>
             </Pressable>
           </View>
         </View>

@@ -25,16 +25,34 @@ const App = () => {
   useEffect(() => {
     const initializeApp = async () => {
       try {
+        console.log('App: Initializing database...');
         await initDatabase();
+        console.log('App: Database initialized successfully');
         setDbInitialized(true);
       } catch (error) {
-        console.error('App initialization error:', error);
-        setInitError(error.message);
-        setDbInitialized(true); // Still show app, but with error state
+        console.error('App: Database initialization error:', error);
+        // On web, database errors are expected - continue anyway
+        if (Platform.OS === 'web') {
+          console.log('App: Web platform - continuing despite database error');
+          setDbInitialized(true);
+        } else {
+          setInitError(error.message);
+          setDbInitialized(true); // Still show app, but with error state
+        }
       }
     };
 
+    // Set timeout to ensure app doesn't hang forever - very short for web
+    const timeout = setTimeout(() => {
+      if (!dbInitialized) {
+        console.warn('App: Initialization timeout, showing app anyway');
+        setDbInitialized(true);
+      }
+    }, 1000); // 1 second timeout - show app quickly
+
     initializeApp();
+
+    return () => clearTimeout(timeout);
   }, []);
 
   if (!dbInitialized) {
@@ -42,11 +60,13 @@ const App = () => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0066cc" />
         <Text style={styles.loadingText}>Initializing VoltEdge...</Text>
+        <Text style={styles.loadingSubtext}>Setting up database...</Text>
       </View>
     );
   }
 
-  if (initError) {
+  // On web, ignore database errors and continue
+  if (initError && Platform.OS !== 'web') {
     const isWebDatabaseError = initError.includes('constructor') || initError.includes('NativeDatabase');
     
     return (
@@ -76,6 +96,9 @@ const App = () => {
     );
   }
 
+  // Always render something - never return null or undefined
+  console.log('App: Rendering main app, dbInitialized:', dbInitialized, 'initError:', initError);
+  
   return (
     <NavigationContainer>
       <StatusBar style="auto" />
@@ -117,11 +140,18 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#ffffff',
+    minHeight: '100vh', // Ensure full viewport height on web
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
     color: '#333333',
+    marginBottom: 8,
+  },
+  loadingSubtext: {
+    fontSize: 12,
+    color: '#999999',
+    textAlign: 'center',
   },
   errorContainer: {
     flex: 1,
@@ -129,6 +159,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     padding: 24,
+    minHeight: '100vh', // Ensure full viewport height on web
   },
   errorTitle: {
     fontSize: 20,

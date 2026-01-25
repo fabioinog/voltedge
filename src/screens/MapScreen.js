@@ -5,9 +5,6 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
-
-// For web, we can use HTML elements directly
-const WebDiv = Platform.OS === 'web' ? 'div' : View;
 import { executeQuery, executeWrite } from '../db/database';
 import MapComponent from '../components/MapComponent';
 import FacilityReportModal from '../components/FacilityReportModal';
@@ -28,13 +25,57 @@ const MapScreen = () => {
   const [showReportModal, setShowReportModal] = useState(false);
   const [showRankingList, setShowRankingList] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isOnline, setIsOnline] = useState(navigator.onLine !== false);
+  const [isOnline, setIsOnline] = useState(
+    typeof navigator !== 'undefined' ? navigator.onLine !== false : true
+  );
 
   useEffect(() => {
-    initializeSampleData().then(() => {
-      loadFacilities();
-    });
+    let mounted = true;
+    
+    const init = async () => {
+      try {
+        console.log('MapScreen: Starting initialization...');
+        await initializeSampleData();
+        console.log('MapScreen: Sample data initialized');
+        if (mounted) {
+          await loadFacilities();
+          console.log('MapScreen: Facilities loaded');
+        }
+      } catch (error) {
+        console.error('MapScreen: Error initializing:', error);
+        // Still try to load facilities even if sample data fails
+        if (mounted) {
+          try {
+            await loadFacilities();
+          } catch (loadError) {
+            console.error('MapScreen: Error loading facilities:', loadError);
+            // Set empty array so screen still renders
+            setFacilities([]);
+          }
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false);
+          console.log('MapScreen: Initialization complete, loading set to false');
+        }
+      }
+    };
+    
+    // Set a timeout to ensure loading doesn't stay true forever
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn('MapScreen: Loading timeout, forcing loading to false');
+        setLoading(false);
+      }
+    }, 2000); // 2 second timeout - show screen quickly
+    
+    init();
     setupOnlineListener();
+    
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+    };
   }, []);
 
   useEffect(() => {
@@ -63,6 +104,8 @@ const MapScreen = () => {
         'SELECT * FROM infrastructure_assets ORDER BY intervention_points DESC'
       );
       
+      console.log(`MapScreen: Loaded ${results.length} facilities from database`);
+      
       // Calculate intervention points for each facility
       const facilitiesWithPoints = await Promise.all(
         results.map(async (facility) => {
@@ -78,9 +121,11 @@ const MapScreen = () => {
         })
       );
 
+      console.log(`MapScreen: Processed ${facilitiesWithPoints.length} facilities with points`);
       setFacilities(facilitiesWithPoints);
     } catch (error) {
       console.error('Error loading facilities:', error);
+      setFacilities([]); // Set empty array on error
     } finally {
       setLoading(false);
     }
@@ -192,27 +237,45 @@ const MapScreen = () => {
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0066cc" />
         <Text style={styles.loadingText}>Loading map...</Text>
+        <Text style={styles.loadingSubtext}>
+          Initializing database and loading facilities...
+        </Text>
       </View>
     );
   }
 
+  // Always render something - never return blank
+  console.log('MapScreen: Rendering, loading:', loading, 'facilities:', facilities.length);
+  
+  // Ensure we always return a valid React element
   return (
-    <View style={styles.container}>
-      {/* Debug info - remove later */}
+    <View style={styles.container} testID="map-screen-container">
+      {/* Always show map wrapper - even if empty */}
+      <View style={styles.mapWrapper}>
+        <MapComponent
+          center={SUDAN_CENTER}
+          zoom={SUDAN_ZOOM}
+          facilities={facilities || []}
+          onFacilityClick={handleFacilityClick}
+        />
+      </View>
+      
+      {/* Always show at least a background color to verify rendering */}
+      {facilities.length === 0 && !loading && (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyStateText}>No facilities loaded</Text>
+          <Text style={styles.emptyStateSubtext}>Check console for initialization status</Text>
+        </View>
+      )}
+
+      {/* Debug info - always visible for troubleshooting */}
       {Platform.OS === 'web' && (
         <View style={styles.debugInfo}>
           <Text style={styles.debugText}>
-            Facilities: {facilities.length} | Online: {isOnline ? 'Yes' : 'No'}
+            VoltEdge Active | Facilities: {facilities.length} | Online: {isOnline ? 'Yes' : 'No'}
           </Text>
         </View>
       )}
-      
-      <MapComponent
-        center={SUDAN_CENTER}
-        zoom={SUDAN_ZOOM}
-        facilities={facilities}
-        onFacilityClick={handleFacilityClick}
-      />
 
       {/* Facility Info Modal */}
       {selectedFacility && (
@@ -226,10 +289,10 @@ const MapScreen = () => {
             <View style={styles.modalContent}>
               <Text style={styles.modalTitle}>{selectedFacility.name}</Text>
               <Text style={styles.modalSubtitle}>
-                Type: {selectedFacility.type.toUpperCase()}
+                Type: {selectedFacility.type.charAt(0).toUpperCase() + selectedFacility.type.slice(1)}
               </Text>
               <Text style={styles.modalSubtitle}>
-                Status: {selectedFacility.status}
+                Status: {selectedFacility.status.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase())}
               </Text>
               <Text style={styles.modalSubtitle}>
                 Priority Points: {selectedFacility.intervention_points.toFixed(1)}
@@ -269,12 +332,12 @@ const MapScreen = () => {
         onPress={() => setShowRankingList(!showRankingList)}
       >
         <Text style={styles.rankingButtonText}>
-          {showRankingList ? 'Hide' : 'Show'} Priority List
+          {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
         </Text>
       </Pressable>
 
       {/* Intervention Ranking List */}
-      {showRankingList && (
+      {showRankingList && facilities.length > 0 && (
         <InterventionRankingList
           facilities={facilities}
           onFacilitySelect={(facility) => {
@@ -298,6 +361,17 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#f5f5f5',
+    width: '100%',
+    height: '100%',
+    minHeight: 400, // Ensure minimum height
+  },
+  mapWrapper: {
+    flex: 1,
+    width: '100%',
+    height: '100%',
+    minHeight: 400,
+    position: 'relative',
+    backgroundColor: '#e8f4f8', // Light blue background to verify rendering
   },
   loadingContainer: {
     flex: 1,
@@ -309,6 +383,12 @@ const styles = StyleSheet.create({
     marginTop: 16,
     fontSize: 16,
     color: '#666666',
+    marginBottom: 8,
+  },
+  loadingSubtext: {
+    fontSize: 12,
+    color: '#999999',
+    textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
@@ -405,6 +485,43 @@ const styles = StyleSheet.create({
   debugText: {
     fontSize: 12,
     color: '#333333',
+  },
+  noDataContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#f5f5f5',
+    padding: 24,
+  },
+  noDataText: {
+    fontSize: 18,
+    color: '#666666',
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  noDataSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+  },
+  emptyState: {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    transform: [{ translateX: -100 }, { translateY: -50 }],
+    alignItems: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.9)',
+    padding: 16,
+    borderRadius: 8,
+  },
+  emptyStateText: {
+    fontSize: 16,
+    color: '#333333',
+    marginBottom: 8,
+  },
+  emptyStateSubtext: {
+    fontSize: 12,
+    color: '#666666',
   },
 });
 

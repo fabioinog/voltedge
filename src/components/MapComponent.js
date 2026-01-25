@@ -6,12 +6,16 @@
 import React, { useEffect, useRef } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 
+// For web, we need to handle div elements differently
+const WebDiv = Platform.OS === 'web' ? 'div' : View;
+
 // Web-only: Use Leaflet for mapping
 let L = null;
 let MapContainer = null;
 let TileLayer = null;
 let Marker = null;
 let Popup = null;
+let MapBounds = null;
 
 if (Platform.OS === 'web') {
   // Dynamically import Leaflet only on web
@@ -22,6 +26,7 @@ if (Platform.OS === 'web') {
     TileLayer = reactLeaflet.TileLayer;
     Marker = reactLeaflet.Marker;
     Popup = reactLeaflet.Popup;
+    MapBounds = require('./MapBounds').default;
 
     // Fix Leaflet default icon issue
     delete L.Icon.Default.prototype._getIconUrl;
@@ -118,96 +123,90 @@ const MapComponent = ({ center, zoom, facilities, onFacilityClick }) => {
       return (
         <View style={styles.container}>
           <View style={styles.placeholder}>
-            <Text style={styles.placeholderText}>Leaflet Not Loaded</Text>
+            <Text style={styles.placeholderText}>Sudan Map</Text>
             <Text style={styles.placeholderSubtext}>
-              MapContainer: {MapContainer ? '✓' : '✗'} | Leaflet: {L ? '✓' : '✗'}
+              {facilities.length} facilities loaded
             </Text>
             <Text style={styles.placeholderSubtext}>
-              Install: npm install leaflet react-leaflet
+              Install map: npm install leaflet react-leaflet --legacy-peer-deps
             </Text>
             <Text style={styles.placeholderSubtext}>
-              Facilities loaded: {facilities.length}
+              Then refresh the page
             </Text>
           </View>
         </View>
       );
     }
 
-      // Use dangerouslySetInnerHTML approach for web
-    // React Native Web can render div, but we need to ensure it's in the DOM
-    const mapId = 'voltedge-map-container';
-    
+    // React Native Web supports HTML elements - use createElement for div
+    const MapDiv = ({ children, style }) => {
+      if (Platform.OS === 'web' && typeof document !== 'undefined') {
+        return React.createElement('div', { style }, children);
+      }
+      return <View style={style}>{children}</View>;
+    };
+
     return (
       <View style={styles.container}>
-        <View
-          nativeID={mapId}
-          style={{
-            width: '100%',
-            height: '100%',
-          }}
-        >
-          {/* Render map using React Leaflet - React Native Web should handle this */}
-          {typeof window !== 'undefined' && (
-            <MapContainer
-              center={center}
-              zoom={zoom}
-              style={{ height: '100%', width: '100%' }}
-              scrollWheelZoom={true}
-              whenCreated={(mapInstance) => {
-                // Store map instance for later use
-                console.log('Map created:', mapInstance);
-              }}
-            >
-              <TileLayer
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-                maxZoom={19}
-              />
-              {facilities.map((facility) => (
-                <Marker
-                  key={facility.id}
-                  position={[facility.location_lat, facility.location_lng]}
-                  icon={createCustomIcon(facility.type, facility.status, facility.intervention_points || 0)}
-                  eventHandlers={{
-                    click: () => {
-                      onFacilityClick(facility);
-                    },
-                  }}
-                >
-                  <Popup>
-                    <div style={{ padding: '8px' }}>
-                      <strong style={{ display: 'block', marginBottom: '4px' }}>
-                        {facility.name}
-                      </strong>
-                      <span style={{ fontSize: '12px', color: '#666' }}>
-                        Type: {facility.type}
-                        <br />
-                        Points: {(facility.intervention_points || 0).toFixed(1)}
-                      </span>
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-            </MapContainer>
-          )}
-        </View>
+        <MapDiv style={{ width: '100%', height: '100%', position: 'relative' }}>
+          <MapContainer
+            center={center}
+            zoom={zoom}
+            style={{ height: '100%', width: '100%' }}
+            scrollWheelZoom={true}
+            minZoom={5}
+            maxZoom={12}
+          >
+            {MapBounds && <MapBounds />}
+            <TileLayer
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+              url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              maxZoom={12}
+            />
+            {facilities.map((facility) => (
+              <Marker
+                key={facility.id}
+                position={[facility.location_lat, facility.location_lng]}
+                icon={createCustomIcon(facility.type, facility.status, facility.intervention_points || 0)}
+                eventHandlers={{
+                  click: () => {
+                    onFacilityClick(facility);
+                  },
+                }}
+              >
+                <Popup>
+                  <div style={{ padding: '8px' }}>
+                    <strong style={{ display: 'block', marginBottom: '4px' }}>
+                      {facility.name}
+                    </strong>
+                    <span style={{ fontSize: '12px', color: '#666' }}>
+                      {facility.type.charAt(0).toUpperCase() + facility.type.slice(1)}
+                      <br />
+                      {(facility.intervention_points || 0).toFixed(1)} pts
+                    </span>
+                  </div>
+                </Popup>
+              </Marker>
+            ))}
+          </MapContainer>
+        </MapDiv>
       </View>
     );
   }
 
-  // Fallback for non-web platforms or if Leaflet fails to load
+  // Fallback - always show something visible
   return (
     <View style={styles.container}>
       <View style={styles.placeholder}>
         <Text style={styles.placeholderText}>
-          {Platform.OS === 'web' ? 'Loading map...' : 'Map view available on web platform'}
+          Sudan Map
         </Text>
         <Text style={styles.placeholderSubtext}>
           {facilities.length} facilities loaded
         </Text>
         {Platform.OS === 'web' && (
           <Text style={styles.placeholderHint}>
-            If map doesn't load, check browser console for errors
+            To see the interactive map, install: npm install leaflet react-leaflet --legacy-peer-deps
           </Text>
         )}
       </View>
@@ -220,13 +219,16 @@ const styles = StyleSheet.create({
     flex: 1,
     width: '100%',
     height: '100%',
+    minHeight: 400,
+    backgroundColor: '#e8f4f8', // Light blue to verify rendering
   },
   placeholder: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#e0e0e0',
+    backgroundColor: '#e8f4f8',
     padding: 20,
+    minHeight: 400,
   },
   placeholderText: {
     fontSize: 18,

@@ -13,6 +13,27 @@ import { executeQuery } from '../db/database';
  */
 const HomeScreen = () => {
   const navigation = useNavigation();
+  // Translation helper - returns English text directly
+  const t = (key) => {
+    const translations = {
+      loading: 'Loading...',
+      infrastructureStatus: 'Infrastructure Status',
+      realTimeMonitoring: 'Real-time monitoring of critical systems',
+      totalAssets: 'Total Assets',
+      failed: 'Failed',
+      atRisk: 'At Risk',
+      pendingActions: 'Pending Actions',
+      viewMap: 'View Map',
+      keyCapabilities: 'Key Capabilities',
+      dependencyAwareMap: 'Dependency-Aware City Map',
+      cascadingFailure: 'Cascading Failure System',
+      interventionRanking: 'Intervention Ranking Engine',
+      survivalWaterMode: 'Minimum Survival Water Mode',
+      facilityTimers: 'Facility-Collapse Timers',
+      offlineFunctionality: 'Offline Functionality',
+    };
+    return translations[key] || key;
+  };
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({
     totalAssets: 0,
@@ -76,7 +97,7 @@ const HomeScreen = () => {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0066cc" />
-        <Text style={styles.loadingText}>Loading dashboard...</Text>
+        <Text style={styles.loadingText}>{t('loading')}</Text>
       </View>
     );
   }
@@ -84,37 +105,37 @@ const HomeScreen = () => {
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
       <View style={styles.header}>
-        <Text style={styles.title}>Infrastructure Status</Text>
+        <Text style={styles.title}>{t('infrastructureStatus')}</Text>
         <Text style={styles.subtitle}>
-          Real-time monitoring of water and power systems
+          {t('realTimeMonitoring')}
         </Text>
       </View>
 
       <View style={styles.statsGrid}>
         <View style={styles.statCard}>
           <Text style={styles.statValue}>{stats.totalAssets}</Text>
-          <Text style={styles.statLabel}>Total Assets</Text>
+          <Text style={styles.statLabel}>{t('totalAssets')}</Text>
         </View>
 
         <View style={[styles.statCard, styles.statCardFailed]}>
           <Text style={[styles.statValue, styles.statValueFailed]}>
             {stats.failedAssets}
           </Text>
-          <Text style={styles.statLabel}>Failed</Text>
+          <Text style={styles.statLabel}>{t('failed')}</Text>
         </View>
 
         <View style={[styles.statCard, styles.statCardAtRisk]}>
           <Text style={[styles.statValue, styles.statValueAtRisk]}>
             {stats.atRiskAssets}
           </Text>
-          <Text style={styles.statLabel}>At Risk</Text>
+          <Text style={styles.statLabel}>{t('atRisk')}</Text>
         </View>
 
         <View style={[styles.statCard, styles.statCardInterventions]}>
           <Text style={[styles.statValue, styles.statValueInterventions]}>
             {stats.pendingInterventions}
           </Text>
-          <Text style={styles.statLabel}>Pending Actions</Text>
+          <Text style={styles.statLabel}>{t('pendingActions')}</Text>
         </View>
       </View>
 
@@ -122,29 +143,29 @@ const HomeScreen = () => {
         style={styles.mapButton}
         onPress={() => navigation.navigate('Map')}
       >
-        <Text style={styles.mapButtonText}>View Map</Text>
+        <Text style={styles.mapButtonText}>{t('viewMap')}</Text>
       </Pressable>
 
       <View style={styles.infoSection}>
-        <Text style={styles.infoTitle}>Key Capabilities</Text>
+        <Text style={styles.infoTitle}>{t('keyCapabilities')}</Text>
         <View style={styles.capabilityList}>
           <Text style={styles.capabilityItem}>
-            • Dependency-Aware City Map
+            • {t('dependencyAwareMap')}
           </Text>
           <Text style={styles.capabilityItem}>
-            • Cascading Failure System
+            • {t('cascadingFailure')}
           </Text>
           <Text style={styles.capabilityItem}>
-            • Intervention Ranking Engine
+            • {t('interventionRanking')}
           </Text>
           <Text style={styles.capabilityItem}>
-            • Minimum Survival Water Mode
+            • {t('survivalWaterMode')}
           </Text>
           <Text style={styles.capabilityItem}>
-            • Facility-Collapse Timers
+            • {t('facilityTimers')}
           </Text>
           <Text style={styles.capabilityItem}>
-            • Offline Functionality
+            • {t('offlineFunctionality')}
           </Text>
         </View>
       </View>

@@ -4,11 +4,23 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
-
 /**
  * Intervention Ranking List Component
  */
 const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
+  // Translation helper - returns English text directly
+  const t = (key, params) => {
+    const translations = {
+      water: 'Water',
+      power: 'Power',
+      shelter: 'Shelter',
+      food: 'Food',
+      pts: 'pts',
+      interventionPriority: 'Intervention Priority',
+      topFacilities: `Top ${params?.count || 0} Facilities`,
+    };
+    return translations[key] || key;
+  };
   const sortedFacilities = [...facilities].sort(
     (a, b) => b.intervention_points - a.intervention_points
   );
@@ -38,12 +50,12 @@ const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
       </View>
       <View style={styles.facilityInfo}>
         <Text style={styles.facilityName}>{item.name}</Text>
-        <Text style={styles.facilityType}>{item.type.toUpperCase()}</Text>
+        <Text style={styles.facilityType}>{t(item.type).toUpperCase()}</Text>
       </View>
       <View style={[styles.typeIndicator, { backgroundColor: getTypeColor(item.type) }]} />
       <View style={styles.pointsContainer}>
         <Text style={styles.pointsValue}>{item.intervention_points.toFixed(1)}</Text>
-        <Text style={styles.pointsLabel}>pts</Text>
+        <Text style={styles.pointsLabel}>{t('pts')}</Text>
       </View>
     </Pressable>
   );
@@ -51,8 +63,10 @@ const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Intervention Priority</Text>
-        <Text style={styles.headerSubtitle}>Top {sortedFacilities.length} facilities</Text>
+        <Text style={styles.headerTitle}>{t('interventionPriority')}</Text>
+        <Text style={styles.headerSubtitle}>
+          {t('topFacilities', { count: sortedFacilities.length })}
+        </Text>
       </View>
       <FlatList
         data={sortedFacilities}

@@ -167,14 +167,45 @@ const updateFacilitiesFromPublicData = async (facilities) => {
  */
 export const initializeSampleData = async () => {
   try {
-    const existing = await executeQuery('SELECT COUNT(*) as count FROM infrastructure_assets');
-    if (existing[0]?.count > 0) {
-      console.log('Sample data already exists');
+    // Check if we can query the database
+    let existing;
+    try {
+      existing = await executeQuery('SELECT COUNT(*) as count FROM infrastructure_assets');
+    } catch (queryError) {
+      console.warn('Could not query database, may be using IndexedDB fallback:', queryError);
+      // For IndexedDB, the query might fail - try a different approach
+      existing = [{ count: 0 }];
+    }
+    
+    // If we have data but less than 30 facilities, clear and reinitialize
+    const count = existing && existing[0]?.count ? existing[0].count : 0;
+    if (count > 0 && count < 30) {
+      console.log(`Found ${count} facilities, clearing to reinitialize with 30 facilities...`);
+      try {
+        // Clear all existing facilities
+        await executeWrite('DELETE FROM infrastructure_assets');
+        console.log('Cleared existing facilities');
+        // Also clear related data
+        try {
+          await executeWrite('DELETE FROM dependencies');
+          await executeWrite('DELETE FROM failure_events');
+          await executeWrite('DELETE FROM interventions');
+          await executeWrite('DELETE FROM user_reports');
+        } catch (clearError) {
+          console.warn('Could not clear related tables:', clearError);
+        }
+      } catch (deleteError) {
+        console.warn('Could not clear existing facilities:', deleteError);
+        // Try to continue anyway - might be able to insert
+      }
+    } else if (count >= 30) {
+      console.log(`Sample data already exists with ${count} facilities`);
       return;
     }
 
-    // Sample facilities in Sudan
+    // Sample facilities in Sudan - based on real cities and towns
     const sampleFacilities = [
+      // Khartoum (Capital) - 15.5007°N, 32.5599°E
       {
         name: 'Khartoum Water Treatment Plant',
         type: 'water',
@@ -187,6 +218,39 @@ export const initializeSampleData = async () => {
         population_served: 5000000,
       },
       {
+        name: 'Khartoum Power Grid Station',
+        type: 'power',
+        lat: 15.5100,
+        lng: 32.5700,
+        status: 'operational',
+        facility_condition: 'good',
+        facility_importance: 'very_important',
+        population_served: 5000000,
+      },
+      {
+        name: 'Emergency Shelter - Khartoum North',
+        type: 'shelter',
+        lat: 15.5200,
+        lng: 32.5800,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'low',
+        population_amount: 'high',
+        facility_importance: 'very_important',
+      },
+      {
+        name: 'Food Distribution Center - Khartoum',
+        type: 'food',
+        lat: 15.4900,
+        lng: 32.5500,
+        status: 'operational',
+        facility_condition: 'fair',
+        supply_amount: 'medium',
+        facility_importance: 'important',
+      },
+      
+      // Port Sudan - 19.6158°N, 37.2164°E
+      {
         name: 'Port Sudan Power Station',
         type: 'power',
         lat: 19.6158,
@@ -197,10 +261,172 @@ export const initializeSampleData = async () => {
         population_served: 500000,
       },
       {
-        name: 'Emergency Shelter - Khartoum',
+        name: 'Port Sudan Water Supply',
+        type: 'water',
+        lat: 19.6250,
+        lng: 37.2250,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'high',
+        facility_importance: 'important',
+        population_served: 500000,
+      },
+      
+      // Nyala (Darfur) - 12.0500°N, 24.8800°E
+      {
+        name: 'Nyala Emergency Shelter',
         type: 'shelter',
-        lat: 15.5007,
-        lng: 32.5599,
+        lat: 12.0500,
+        lng: 24.8800,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'low',
+        population_amount: 'very_high',
+        facility_importance: 'very_important',
+      },
+      {
+        name: 'Nyala Food Distribution',
+        type: 'food',
+        lat: 12.0600,
+        lng: 24.8900,
+        status: 'operational',
+        facility_condition: 'fair',
+        supply_amount: 'medium',
+        facility_importance: 'important',
+      },
+      {
+        name: 'Nyala Water Well',
+        type: 'water',
+        lat: 12.0400,
+        lng: 24.8700,
+        status: 'at_risk',
+        facility_condition: 'fair',
+        supply_amount: 'low',
+        facility_importance: 'very_important',
+        population_served: 200000,
+      },
+      
+      // El Obeid - 13.1833°N, 30.2167°E
+      {
+        name: 'El Obeid Power Plant',
+        type: 'power',
+        lat: 13.1833,
+        lng: 30.2167,
+        status: 'operational',
+        facility_condition: 'good',
+        facility_importance: 'important',
+        population_served: 400000,
+      },
+      {
+        name: 'El Obeid Water Treatment',
+        type: 'water',
+        lat: 13.1900,
+        lng: 30.2200,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'high',
+        facility_importance: 'important',
+        population_served: 400000,
+      },
+      
+      // Kassala - 15.4500°N, 36.4000°E
+      {
+        name: 'Kassala Power Grid',
+        type: 'power',
+        lat: 15.4500,
+        lng: 36.4000,
+        status: 'at_risk',
+        facility_condition: 'fair',
+        facility_importance: 'moderate',
+        population_served: 300000,
+      },
+      {
+        name: 'Kassala Water Source',
+        type: 'water',
+        lat: 15.4600,
+        lng: 36.4100,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'medium',
+        facility_importance: 'important',
+        population_served: 300000,
+      },
+      
+      // Gedaref - 14.0333°N, 35.3833°E
+      {
+        name: 'Gedaref Food Storage',
+        type: 'food',
+        lat: 14.0333,
+        lng: 35.3833,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'high',
+        facility_importance: 'important',
+      },
+      {
+        name: 'Gedaref Water Supply',
+        type: 'water',
+        lat: 14.0400,
+        lng: 35.3900,
+        status: 'operational',
+        facility_condition: 'fair',
+        supply_amount: 'medium',
+        facility_importance: 'moderate',
+        population_served: 250000,
+      },
+      
+      // Kosti - 13.1667°N, 32.6667°E
+      {
+        name: 'Kosti Power Station',
+        type: 'power',
+        lat: 13.1667,
+        lng: 32.6667,
+        status: 'operational',
+        facility_condition: 'fair',
+        facility_importance: 'moderate',
+        population_served: 200000,
+      },
+      {
+        name: 'Kosti Emergency Shelter',
+        type: 'shelter',
+        lat: 13.1700,
+        lng: 32.6700,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'low',
+        population_amount: 'medium',
+        facility_importance: 'important',
+      },
+      
+      // Al-Fashir (Darfur) - 13.6167°N, 25.3500°E
+      {
+        name: 'Al-Fashir Shelter Complex',
+        type: 'shelter',
+        lat: 13.6167,
+        lng: 25.3500,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'very_low',
+        population_amount: 'very_high',
+        facility_importance: 'very_important',
+      },
+      {
+        name: 'Al-Fashir Food Aid Center',
+        type: 'food',
+        lat: 13.6200,
+        lng: 25.3600,
+        status: 'operational',
+        facility_condition: 'fair',
+        supply_amount: 'low',
+        facility_importance: 'very_important',
+      },
+      
+      // Geneina (West Darfur) - 13.4500°N, 22.4500°E
+      {
+        name: 'Geneina Emergency Shelter',
+        type: 'shelter',
+        lat: 13.4500,
+        lng: 22.4500,
         status: 'operational',
         facility_condition: 'poor',
         supply_amount: 'low',
@@ -208,14 +434,170 @@ export const initializeSampleData = async () => {
         facility_importance: 'very_important',
       },
       {
-        name: 'Food Distribution Center - Darfur',
+        name: 'Geneina Water Well',
+        type: 'water',
+        lat: 13.4600,
+        lng: 22.4600,
+        status: 'at_risk',
+        facility_condition: 'fair',
+        supply_amount: 'low',
+        facility_importance: 'very_important',
+        population_served: 150000,
+      },
+      
+      // Dongola - 19.1667°N, 30.4833°E
+      {
+        name: 'Dongola Power Grid',
+        type: 'power',
+        lat: 19.1667,
+        lng: 30.4833,
+        status: 'operational',
+        facility_condition: 'good',
+        facility_importance: 'moderate',
+        population_served: 100000,
+      },
+      {
+        name: 'Dongola Water Treatment',
+        type: 'water',
+        lat: 19.1700,
+        lng: 30.4900,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'high',
+        facility_importance: 'moderate',
+        population_served: 100000,
+      },
+      
+      // Atbara - 17.7000°N, 33.9667°E
+      {
+        name: 'Atbara Power Station',
+        type: 'power',
+        lat: 17.7000,
+        lng: 33.9667,
+        status: 'operational',
+        facility_condition: 'good',
+        facility_importance: 'important',
+        population_served: 150000,
+      },
+      {
+        name: 'Atbara Water Supply',
+        type: 'water',
+        lat: 17.7100,
+        lng: 33.9700,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'high',
+        facility_importance: 'important',
+        population_served: 150000,
+      },
+      
+      // Shendi - 16.6833°N, 33.4333°E
+      {
+        name: 'Shendi Power Grid',
+        type: 'power',
+        lat: 16.6833,
+        lng: 33.4333,
+        status: 'at_risk',
+        facility_condition: 'fair',
+        facility_importance: 'moderate',
+        population_served: 120000,
+      },
+      {
+        name: 'Shendi Food Distribution',
         type: 'food',
-        lat: 13.8293,
-        lng: 25.3320,
+        lat: 16.6900,
+        lng: 33.4400,
+        status: 'operational',
+        facility_condition: 'fair',
+        supply_amount: 'medium',
+        facility_importance: 'moderate',
+      },
+      
+      // Kadugli (South Kordofan) - 11.0167°N, 29.7167°E
+      {
+        name: 'Kadugli Water Treatment',
+        type: 'water',
+        lat: 11.0167,
+        lng: 29.7167,
         status: 'operational',
         facility_condition: 'fair',
         supply_amount: 'medium',
         facility_importance: 'important',
+        population_served: 180000,
+      },
+      {
+        name: 'Kadugli Emergency Shelter',
+        type: 'shelter',
+        lat: 11.0200,
+        lng: 29.7200,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'low',
+        population_amount: 'high',
+        facility_importance: 'very_important',
+      },
+      
+      // Singa (Sennar) - 13.1500°N, 33.9333°E
+      {
+        name: 'Singa Power Grid',
+        type: 'power',
+        lat: 13.1500,
+        lng: 33.9333,
+        status: 'operational',
+        facility_condition: 'good',
+        facility_importance: 'moderate',
+        population_served: 100000,
+      },
+      
+      // Ed Damazin (Blue Nile) - 11.7833°N, 34.3500°E
+      {
+        name: 'Ed Damazin Water Plant',
+        type: 'water',
+        lat: 11.7833,
+        lng: 34.3500,
+        status: 'operational',
+        facility_condition: 'good',
+        supply_amount: 'high',
+        facility_importance: 'important',
+        population_served: 200000,
+      },
+      
+      // Rabak (White Nile) - 13.1500°N, 32.7333°E
+      {
+        name: 'Rabak Emergency Shelter',
+        type: 'shelter',
+        lat: 13.1500,
+        lng: 32.7333,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'low',
+        population_amount: 'medium',
+        facility_importance: 'important',
+      },
+      
+      // El Daein (East Darfur) - 11.4667°N, 26.1333°E
+      {
+        name: 'El Daein Food Aid Center',
+        type: 'food',
+        lat: 11.4667,
+        lng: 26.1333,
+        status: 'operational',
+        facility_condition: 'fair',
+        supply_amount: 'low',
+        facility_importance: 'very_important',
+      },
+      
+      // Zalingei (Central Darfur) - 12.9000°N, 23.4833°E
+      {
+        name: 'Zalingei Shelter Complex',
+        type: 'shelter',
+        lat: 12.9000,
+        lng: 23.4833,
+        status: 'operational',
+        facility_condition: 'poor',
+        supply_amount: 'very_low',
+        population_amount: 'very_high',
+        facility_importance: 'very_important',
       },
     ];
 
@@ -256,8 +638,9 @@ export const initializeSampleData = async () => {
       }
     }
 
-    console.log('Sample data initialized');
+    console.log(`Sample data initialized with ${sampleFacilities.length} facilities`);
   } catch (error) {
     console.error('Error initializing sample data:', error);
+    throw error; // Re-throw to let caller know initialization failed
   }
 };

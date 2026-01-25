@@ -3,14 +3,18 @@
  * Displays water sources, power sources, shelters, and food sources
  */
 
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { executeQuery, executeWrite } from '../db/database';
 import MapComponent from '../components/MapComponent';
 import FacilityReportModal from '../components/FacilityReportModal';
 import InterventionRankingList from '../components/InterventionRankingList';
+import DirectionsPanel from '../components/DirectionsPanel';
+import SimulationJoystick from '../components/SimulationJoystick';
 import { calculateInterventionPoints } from '../utils/interventionRanking';
 import { initializeSampleData } from '../utils/dataSync';
+import { findNearestFacility, formatDistance } from '../utils/distance';
+import { generateRoute, getNextInstruction } from '../utils/routing';
 
 // Sudan center coordinates
 const SUDAN_CENTER = [15.5, 30.0];
@@ -28,6 +32,18 @@ const MapScreen = () => {
   const [isOnline, setIsOnline] = useState(
     typeof navigator !== 'undefined' ? navigator.onLine !== false : true
   );
+  
+  // GPS and navigation state - always start at Khartoum
+  const [userLocation, setUserLocation] = useState({
+    lat: 15.5007,
+    lng: 32.5599,
+    accuracy: 10,
+    timestamp: Date.now(),
+  });
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [navigationRoute, setNavigationRoute] = useState(null);
+  const [currentInstruction, setCurrentInstruction] = useState(null);
+  const [nearestFacility, setNearestFacility] = useState(null);
 
   useEffect(() => {
     let mounted = true;
@@ -83,6 +99,23 @@ const MapScreen = () => {
       syncFacilities();
     }
   }, [isOnline]);
+
+
+  // Update nearest facility when location changes
+  useEffect(() => {
+    if (userLocation && facilities.length > 0) {
+      const nearest = findNearestFacility(userLocation.lat, userLocation.lng, facilities);
+      setNearestFacility(nearest);
+    }
+  }, [userLocation, facilities]);
+
+  // Update navigation instructions when location changes
+  useEffect(() => {
+    if (navigationRoute && userLocation) {
+      const instruction = getNextInstruction(userLocation.lat, userLocation.lng, navigationRoute);
+      setCurrentInstruction(instruction);
+    }
+  }, [userLocation, navigationRoute]);
 
   /**
    * Setup online/offline listener
@@ -142,6 +175,103 @@ const MapScreen = () => {
     } catch (error) {
       console.error('Error syncing facilities:', error);
     }
+  };
+
+
+  /**
+   * Start navigation to facility
+   */
+  const startNavigation = (facility) => {
+    if (!userLocation) {
+      console.warn('Cannot start navigation: user location not available');
+      return;
+    }
+
+    const route = generateRoute(
+      userLocation.lat,
+      userLocation.lng,
+      facility.location_lat || facility.lat,
+      facility.location_lng || facility.lng
+    );
+    setNavigationRoute(route);
+    setSelectedFacility(facility);
+  };
+
+  /**
+   * Stop navigation
+   */
+  const stopNavigation = () => {
+    setNavigationRoute(null);
+    setCurrentInstruction(null);
+  };
+
+  /**
+   * Toggle simulation mode
+   */
+  const toggleSimulation = () => {
+    if (isSimulating) {
+      // Stop simulation - return to fixed Khartoum location
+      setIsSimulating(false);
+      setUserLocation({
+        lat: 15.5007,
+        lng: 32.5599,
+        accuracy: 10,
+        timestamp: Date.now(),
+      });
+    } else {
+      // Start simulation - use current location or spawn at Khartoum
+      // Don't reset location if user was already moved - preserve position
+      if (!userLocation) {
+        setUserLocation({
+          lat: 15.5007,
+          lng: 32.5599,
+          accuracy: 10,
+          timestamp: Date.now(),
+        });
+      }
+      setIsSimulating(true);
+      console.log('Simulation started, marker at:', userLocation?.lat, userLocation?.lng);
+    }
+  };
+
+  /**
+   * Handle joystick movement in simulation
+   * Works like a game character - smooth, persistent movement
+   */
+  const handleJoystickMove = (direction) => {
+    if (!isSimulating || !userLocation) return;
+    
+    // Use functional update to ensure we're always working with the latest location
+    setUserLocation((currentLocation) => {
+      if (!currentLocation) return currentLocation;
+      
+      // Calculate movement at normal walking pace (~1.4 m/s = 5 km/h)
+      // Joystick coordinates: up = negative y, down = positive y, left = negative x, right = positive x
+      // Map coordinates: north = positive lat, south = negative lat, east = positive lng, west = negative lng
+      // Walking speed: ~1.4 meters per second. Using 1 meter per update for slower, more realistic walking pace on map
+      const metersPerUpdate = 0.2;
+      const latOffset = (-direction.y * metersPerUpdate) / 111000; // Up = north, down = south
+      const lngOffset = (direction.x * metersPerUpdate) / (111000 * Math.cos(currentLocation.lat * Math.PI / 180)); // Right = east, left = west
+
+      // Calculate new position - no restrictions, free movement
+      const newLat = currentLocation.lat + latOffset;
+      const newLng = currentLocation.lng + lngOffset;
+
+      return {
+        ...currentLocation,
+        lat: newLat,
+        lng: newLng,
+        timestamp: Date.now(),
+      };
+    });
+  };
+  
+  /**
+   * Handle joystick stop - keep current position, don't reset
+   */
+  const handleJoystickStop = () => {
+    // Position persists - like a game character, it stays where you left it
+    // No reset, no snap back to spawn
   };
 
   /**
@@ -256,7 +386,10 @@ const MapScreen = () => {
           center={SUDAN_CENTER}
           zoom={SUDAN_ZOOM}
           facilities={facilities || []}
+          userLocation={userLocation}
+          route={navigationRoute}
           onFacilityClick={handleFacilityClick}
+          isSimulating={isSimulating}
         />
       </View>
       
@@ -299,6 +432,16 @@ const MapScreen = () => {
               </Text>
 
               <Pressable
+                style={styles.navigateButton}
+                onPress={() => {
+                  startNavigation(selectedFacility);
+                  setSelectedFacility(null);
+                }}
+              >
+                <Text style={styles.navigateButtonText}>Navigate</Text>
+              </Pressable>
+
+              <Pressable
                 style={styles.reportButton}
                 onPress={handleReportProblem}
               >
@@ -326,6 +469,16 @@ const MapScreen = () => {
         />
       )}
 
+      {/* Simulation Toggle */}
+      <Pressable
+        style={[styles.simulationButton, isSimulating && styles.simulationButtonActive]}
+        onPress={toggleSimulation}
+      >
+        <Text style={[styles.simulationButtonText, isSimulating && styles.simulationButtonTextActive]}>
+          {isSimulating ? 'Stop Simulation' : 'Simulate Walking'}
+        </Text>
+      </Pressable>
+
       {/* Intervention Ranking Toggle */}
       <Pressable
         style={styles.rankingButton}
@@ -335,6 +488,40 @@ const MapScreen = () => {
           {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
         </Text>
       </Pressable>
+
+      {/* Simulation Joystick */}
+      {isSimulating && (
+        <SimulationJoystick
+          onMove={handleJoystickMove}
+          onStop={handleJoystickStop}
+        />
+      )}
+
+      {/* Directions Panel */}
+      {navigationRoute && (
+        <DirectionsPanel
+          route={navigationRoute}
+          currentInstruction={currentInstruction}
+          onClose={stopNavigation}
+        />
+      )}
+
+      {/* Nearest Facility Info */}
+      {nearestFacility && !navigationRoute && (
+        <View style={styles.nearestFacilityInfo}>
+          <Text style={styles.nearestFacilityTitle}>Nearest Facility</Text>
+          <Text style={styles.nearestFacilityName}>{nearestFacility.facility.name}</Text>
+          <Text style={styles.nearestFacilityDistance}>
+            {formatDistance(nearestFacility.distance)} away
+          </Text>
+          <Pressable
+            style={styles.nearestFacilityButton}
+            onPress={() => startNavigation(nearestFacility.facility)}
+          >
+            <Text style={styles.nearestFacilityButtonText}>Navigate</Text>
+          </Pressable>
+        </View>
+      )}
 
       {/* Intervention Ranking List */}
       {showRankingList && facilities.length > 0 && (
@@ -436,9 +623,34 @@ const styles = StyleSheet.create({
     color: '#333333',
     fontSize: 16,
   },
-  rankingButton: {
+  simulationButton: {
     position: 'absolute',
     top: 16,
+    right: 16,
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    zIndex: 1000,
+  },
+  simulationButtonActive: {
+    backgroundColor: '#ff9900',
+  },
+  simulationButtonText: {
+    color: '#0066cc',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  simulationButtonTextActive: {
+    color: '#ffffff',
+  },
+  rankingButton: {
+    position: 'absolute',
+    top: 70,
     right: 16,
     backgroundColor: '#ffffff',
     padding: 12,
@@ -451,6 +663,59 @@ const styles = StyleSheet.create({
   },
   rankingButtonText: {
     color: '#0066cc',
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  navigateButton: {
+    backgroundColor: '#00cc00',
+    padding: 16,
+    borderRadius: 8,
+    marginTop: 16,
+    alignItems: 'center',
+  },
+  navigateButtonText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  nearestFacilityInfo: {
+    position: 'absolute',
+    top: 124,
+    left: 16,
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    minWidth: 200,
+  },
+  nearestFacilityTitle: {
+    fontSize: 12,
+    color: '#666666',
+    marginBottom: 4,
+  },
+  nearestFacilityName: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 4,
+  },
+  nearestFacilityDistance: {
+    fontSize: 14,
+    color: '#0066cc',
+    marginBottom: 8,
+  },
+  nearestFacilityButton: {
+    backgroundColor: '#0066cc',
+    padding: 8,
+    borderRadius: 4,
+    alignItems: 'center',
+  },
+  nearestFacilityButtonText: {
+    color: '#ffffff',
     fontSize: 14,
     fontWeight: 'bold',
   },

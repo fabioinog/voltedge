@@ -16,6 +16,7 @@ let TileLayer = null;
 let Marker = null;
 let Popup = null;
 let MapBounds = null;
+let MapCenter = null;
 
 if (Platform.OS === 'web') {
   // Dynamically import Leaflet only on web
@@ -27,6 +28,7 @@ if (Platform.OS === 'web') {
     Marker = reactLeaflet.Marker;
     Popup = reactLeaflet.Popup;
     MapBounds = require('./MapBounds').default;
+    MapCenter = require('./MapCenter').default;
 
     // Fix Leaflet default icon issue
     delete L.Icon.Default.prototype._getIconUrl;
@@ -93,10 +95,37 @@ const createCustomIcon = (type, status, points) => {
 };
 
 /**
+ * Route Polyline Component (internal)
+ */
+const RoutePolylineComponent = ({ route }) => {
+  const { useMap } = require('react-leaflet');
+  const map = useMap();
+  
+  React.useEffect(() => {
+    if (route.waypoints && route.waypoints.length > 1 && L) {
+      const latlngs = route.waypoints.map(wp => [wp.lat, wp.lng]);
+      const polyline = L.polyline(latlngs, { 
+        color: '#0066cc', 
+        weight: 4, 
+        opacity: 0.7,
+        smoothFactor: 1
+      });
+      polyline.addTo(map);
+      
+      return () => {
+        map.removeLayer(polyline);
+      };
+    }
+  }, [route, map]);
+  
+  return null;
+};
+
+/**
  * Map Component
  * Uses HTML/CSS directly on web, React Native on mobile
  */
-const MapComponent = ({ center, zoom, facilities, onFacilityClick }) => {
+const MapComponent = ({ center, zoom, facilities, userLocation, route, onFacilityClick, isSimulating }) => {
   const mapContainerRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const markersRef = useRef([]);
@@ -155,14 +184,48 @@ const MapComponent = ({ center, zoom, facilities, onFacilityClick }) => {
             style={{ height: '100%', width: '100%' }}
             scrollWheelZoom={true}
             minZoom={5}
-            maxZoom={12}
+            maxZoom={19}
           >
-            {MapBounds && <MapBounds />}
+            {MapBounds && <MapBounds isSimulating={isSimulating} />}
+            {MapCenter && userLocation && <MapCenter center={[userLocation.lat, userLocation.lng]} isSimulating={isSimulating} />}
             <TileLayer
+              key="main-tile-layer"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-              maxZoom={12}
+              maxZoom={19}
+              updateWhenZooming={false}
+              updateWhenIdle={false}
+              keepBuffer={5}
+              noWrap={false}
             />
+            
+            {/* User Location Marker - Always show if userLocation exists */}
+            {userLocation && L && (
+              <Marker
+                key="user-location-marker"
+                position={[userLocation.lat, userLocation.lng]}
+                icon={L.divIcon({
+                  className: 'user-location-marker',
+                  html: '<div style="width: 30px; height: 30px; border-radius: 50%; background-color: #00ff00; border: 4px solid white; box-shadow: 0 0 15px rgba(0,255,0,0.8), 0 0 30px rgba(0,255,0,0.4); z-index: 1000;"></div>',
+                  iconSize: [30, 30],
+                  iconAnchor: [15, 15],
+                })}
+              >
+                <Popup>
+                  <div style={{ padding: '8px' }}>
+                    <strong>Your Location</strong>
+                    <br />
+                    Accuracy: {Math.round(userLocation.accuracy || 10)}m
+                  </div>
+                </Popup>
+              </Marker>
+            )}
+
+            {/* Route Polyline */}
+            {route && route.waypoints && route.waypoints.length > 1 && (
+              <RoutePolylineComponent route={route} />
+            )}
+
             {facilities.map((facility) => (
               <Marker
                 key={facility.id}

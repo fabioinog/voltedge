@@ -20,6 +20,12 @@ import { executeQuery } from '../db/database';
 export const calculateInterventionPoints = async (facility) => {
   let points = 0;
 
+  // Validate facility object
+  if (!facility || typeof facility !== 'object') {
+    console.warn('calculateInterventionPoints: Invalid facility object', facility);
+    return 0;
+  }
+
   // Base points from facility importance
   const importanceMultiplier = {
     very_important: 5.0,
@@ -27,10 +33,11 @@ export const calculateInterventionPoints = async (facility) => {
     moderate: 1.5,
     not_important: 0.5,
   };
-  points += importanceMultiplier[facility.facility_importance] || 1.5;
+  const importance = facility.facility_importance || 'moderate';
+  points += importanceMultiplier[importance] || 1.5;
 
-  // People restored (for shelters and facilities)
-  if (facility.type === 'shelter') {
+  // People restored (for shelters, hospitals, and facilities)
+  if (facility.type === 'shelter' || facility.type === 'hospital') {
     const populationMultiplier = {
       very_high: 50,
       high: 30,
@@ -38,16 +45,21 @@ export const calculateInterventionPoints = async (facility) => {
       low: 5,
       very_low: 1,
     };
-    points += populationMultiplier[facility.population_amount] || 15;
+    const popAmount = facility.population_amount || 'medium';
+    points += populationMultiplier[popAmount] || 15;
   } else {
     // For other facilities, use population_served if available
-    points += (facility.population_served || 0) * 0.1;
+    const popServed = facility.population_served || 0;
+    if (typeof popServed === 'number' && !isNaN(popServed)) {
+      points += popServed * 0.1;
+    }
   }
 
   // Urgency (time to failure) - higher urgency = more points
   // If urgency_hours is low (imminent failure), add more points
-  if (facility.urgency_hours > 0) {
-    const urgencyPoints = Math.max(0, 100 - facility.urgency_hours) * 0.5;
+  const urgencyHours = facility.urgency_hours;
+  if (typeof urgencyHours === 'number' && !isNaN(urgencyHours) && urgencyHours > 0) {
+    const urgencyPoints = Math.max(0, 100 - urgencyHours) * 0.5;
     points += urgencyPoints;
   }
 
@@ -59,7 +71,11 @@ export const calculateInterventionPoints = async (facility) => {
     good: 0.5,
     excellent: 0.2,
   };
-  points *= conditionMultiplier[facility.facility_condition] || 1.0;
+  const condition = facility.facility_condition || 'fair';
+  const conditionMult = conditionMultiplier[condition] || 1.0;
+  if (typeof conditionMult === 'number' && !isNaN(conditionMult)) {
+    points *= conditionMult;
+  }
 
   // Supply amount - lower supply = more points (higher priority)
   if (facility.supply_amount) {
@@ -70,33 +86,57 @@ export const calculateInterventionPoints = async (facility) => {
       high: 0.7,
       very_high: 0.5,
     };
-    points *= supplyMultiplier[facility.supply_amount] || 1.0;
+    const supplyMult = supplyMultiplier[facility.supply_amount] || 1.0;
+    if (typeof supplyMult === 'number' && !isNaN(supplyMult)) {
+      points *= supplyMult;
+    }
   }
 
   // Effort penalty - if effort is high, reduce points
   // Lower effort_penalty means easier to fix = more points
-  points *= (1.0 / (facility.effort_penalty || 1.0));
+  const effortPenalty = facility.effort_penalty || 1.0;
+  if (typeof effortPenalty === 'number' && !isNaN(effortPenalty) && effortPenalty > 0) {
+    points *= (1.0 / effortPenalty);
+  }
 
   // Cascade prevention - facilities that prevent more failures get more points
-  const cascadePoints = facility.cascade_prevention_count * 10;
-  points += cascadePoints;
+  const cascadeCount = facility.cascade_prevention_count || 0;
+  if (typeof cascadeCount === 'number' && !isNaN(cascadeCount)) {
+    points += cascadeCount * 10;
+  }
 
-  // Status multiplier - failed or at risk facilities get priority
+  // Status multiplier - failed or at risk facilities get VERY HIGH priority
   const statusMultiplier = {
-    failed: 2.0,
-    at_risk: 1.5,
+    failed: 10.0, // Failed facilities get 10x multiplier (highest priority)
+    at_risk: 5.0, // At-risk facilities get 5x multiplier (very high priority)
     operational: 1.0,
   };
-  points *= statusMultiplier[facility.status] || 1.0;
+  const status = facility.status || 'operational';
+  const statusMult = statusMultiplier[status] || 1.0;
+  if (typeof statusMult === 'number' && !isNaN(statusMult)) {
+    points *= statusMult;
+  }
+  
+  // Additional massive point boost for failed facilities
+  if (status === 'failed') {
+    points += 1000; // Add 1000 base points to ensure failed facilities are always top priority
+  }
+  
+  // Additional point boost for at-risk facilities
+  if (status === 'at_risk') {
+    points += 500; // Add 500 base points to ensure at-risk facilities are very high priority
+  }
 
   // Type-specific bonuses
   const typeBonus = {
     shelter: 20, // Shelters are critical
+    hospital: 25, // Hospitals are most critical
     water: 15, // Water is essential
     power: 12, // Power is important
     food: 10, // Food is important
   };
-  points += typeBonus[facility.type] || 0;
+  const type = facility.type || '';
+  points += typeBonus[type] || 0;
 
   // Get cascade prevention count from dependencies
   try {
@@ -112,7 +152,19 @@ export const calculateInterventionPoints = async (facility) => {
     console.error('Error calculating cascade prevention:', error);
   }
 
-  return Math.max(0, points); // Ensure non-negative
+  // Final validation - ensure points is a valid number
+  const finalPoints = typeof points === 'number' && !isNaN(points) ? Math.max(0, points) : 0;
+  
+  if (isNaN(finalPoints) || finalPoints < 0) {
+    console.warn('calculateInterventionPoints: Invalid points calculated', {
+      facility: facility.name || facility.id,
+      points: finalPoints,
+      facility_data: facility
+    });
+    return 0;
+  }
+  
+  return finalPoints;
 };
 
 /**

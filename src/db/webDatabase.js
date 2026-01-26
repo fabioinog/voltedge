@@ -244,10 +244,29 @@ const writeIndexedDB = async (query, params = []) => {
     if (!tableMatch) throw new Error('Invalid UPDATE query');
 
     const tableName = tableMatch[1];
-    const setMatch = query.match(/set\s+(.+?)(?:\s+where|$)/i);
-    if (!setMatch) throw new Error('Invalid UPDATE SET');
+    // Handle multiline queries - normalize whitespace first (replace all whitespace with single space)
+    const normalizedQuery = query.replace(/[\s\n\r\t]+/g, ' ').trim();
+    
+    // Extract SET clause - match everything between SET and WHERE
+    let setClause;
+    const setMatch = normalizedQuery.match(/set\s+(.+?)\s+where/i);
+    if (!setMatch) {
+      // Try without WHERE clause (shouldn't happen but handle gracefully)
+      const setMatchNoWhere = normalizedQuery.match(/set\s+(.+)$/i);
+      if (!setMatchNoWhere) {
+        console.error('UPDATE query parsing failed. Normalized query:', normalizedQuery);
+        throw new Error('Invalid UPDATE SET - could not parse SET clause');
+      }
+      setClause = setMatchNoWhere[1].trim();
+    } else {
+      setClause = setMatch[1].trim();
+    }
+    
+    if (!setClause || setClause.length === 0) {
+      console.error('SET clause is empty. Normalized query:', normalizedQuery);
+      throw new Error('Invalid UPDATE SET - SET clause is empty');
+    }
 
-    const setClause = setMatch[1];
     const updates = {};
 
     // Parse SET field1 = ?, field2 = ?, field3 = CURRENT_TIMESTAMP
@@ -255,6 +274,7 @@ const writeIndexedDB = async (query, params = []) => {
     let paramIndex = 0;
     
     setFields.forEach((field) => {
+      // Match field = ? or field = CURRENT_TIMESTAMP
       const fieldMatch = field.match(/(\w+)\s*=\s*(?:\?|CURRENT_TIMESTAMP)/i);
       if (fieldMatch) {
         const fieldName = fieldMatch[1];
@@ -268,7 +288,8 @@ const writeIndexedDB = async (query, params = []) => {
     });
 
     // Get the record to update - handle WHERE id = ? or WHERE table_name = ?
-    const whereMatch = query.match(/where\s+(\w+)\s*=\s*\?/i);
+    // Use normalized query for WHERE parsing too
+    const whereMatch = normalizedQuery.match(/where\s+(\w+)\s*=\s*\?/i);
     if (!whereMatch) throw new Error('UPDATE requires WHERE clause with ?');
 
     const whereField = whereMatch[1];
@@ -286,7 +307,26 @@ const writeIndexedDB = async (query, params = []) => {
     }
 
     const updated = { ...existing[0], ...updates };
-    return await executeWriteIndexedDB('update', tableName, updated);
+    
+    // For infrastructure_assets, if we're updating status to 'failed', make sure it persists
+    if (tableName === 'infrastructure_assets' && updates.status === 'failed') {
+      console.log(`webDatabase: Updating facility ${updated.id} to failed status`);
+    }
+    
+    const result = await executeWriteIndexedDB('update', tableName, updated);
+    
+    // Verify the update worked for infrastructure_assets status updates
+    if (tableName === 'infrastructure_assets' && updates.status) {
+      await new Promise(resolve => setTimeout(resolve, 50)); // Small delay for IndexedDB
+      const verify = await executeQueryIndexedDB(tableName, item => item.id === updated.id);
+      if (verify[0] && verify[0].status === updates.status) {
+        console.log(`webDatabase: ✓ Verified ${updates.status} status update for facility ${updated.id}`);
+      } else {
+        console.error(`webDatabase: ✗ Status update verification failed! Expected ${updates.status}, got ${verify[0]?.status}`);
+      }
+    }
+    
+    return result;
   }
 
   // DELETE

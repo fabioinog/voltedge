@@ -15,6 +15,7 @@ const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
       power: 'Power',
       shelter: 'Shelter',
       food: 'Food',
+      hospital: 'Hospital',
       pts: 'pts',
       interventionPriority: 'Intervention Priority',
       topFacilities: `Top ${params?.count || 0} Facilities`,
@@ -35,6 +36,8 @@ const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
         return '#cc0000';
       case 'food':
         return '#00cc00';
+      case 'hospital':
+        return '#cc00cc';
       default:
         return '#666666';
     }

@@ -13,19 +13,202 @@ VoltEdge turns infrastructure damage into a prioritized response plan.
 
 ## Key Capabilities
 
-- **Dependency-Aware City Map**: Visualize infrastructure relationships
-- **Cascading Failure System**: Predict and track failure propagation
-- **Intervention Ranking Engine**: Point system based on actual impact
-- **Minimum Survival Water Mode**: Prioritize critical water needs
-- **Facility-Collapse Timers**: Countdown to critical facility failures
+- **Dependency-Aware City Map**: Visualize infrastructure relationships across Sudan
+- **Cascading Failure System**: Predict and track failure propagation through dependencies
+- **Intervention Ranking Engine**: Point-based system prioritizing facilities by actual impact
+- **User Report Validation**: Algorithm prevents fake reports and validates user contributions
+- **Simulated GPS Navigation**: Test movement and navigation without device GPS
 - **Offline Functionality**: Core features work without connectivity, with sync when online
+- **Multi-Facility Support**: Water, Power, Shelters, Food, and Hospitals
+- **Real-Time Priority Updates**: Dynamic ranking based on conditions and user reports
 
 ## Technology Stack
 
-- **Expo React Native**: Cross-platform framework (Web, Android, iOS)
-- **expo-sqlite**: Local database for offline-first architecture
-- **React Navigation**: Navigation between screens
-- **TypeScript**: Type safety (optional, can be added)
+### Core Framework & Runtime
+
+- **Expo SDK 51.0.0**: Cross-platform development framework for React Native
+  - Enables single codebase for Web, Android, and iOS
+  - Managed workflow with minimal native code requirements
+  - Built-in development tools and OTA updates support
+
+- **React 18.2.0**: UI library for building user interfaces
+  - Functional components with hooks
+  - Component-based architecture
+
+- **React Native 0.74.5**: Mobile framework for native app development
+  - Cross-platform mobile development
+  - Native performance with JavaScript
+
+- **React Native Web 0.19.10**: React Native components for web
+  - Enables web deployment from React Native codebase
+  - Consistent UI across platforms
+
+- **@expo/metro-runtime ~3.2.3**: Metro bundler runtime for Expo
+  - Fast JavaScript bundling and hot reloading
+
+### Database & Storage
+
+- **expo-sqlite ~14.0.6**: SQLite database for React Native
+  - Offline-first data persistence
+  - SQL-based queries and transactions
+  - Automatic database initialization
+
+- **IndexedDB** (Web Fallback): Browser-based database storage
+  - Custom implementation in `src/db/webDatabase.js`
+  - Fallback when expo-sqlite is unavailable on web
+  - SQL-like query interface for consistency
+
+### Navigation
+
+- **@react-navigation/native ^6.1.9**: Navigation library for React Native
+  - Declarative navigation system
+  - Cross-platform navigation patterns
+
+- **@react-navigation/native-stack ^6.9.17**: Stack navigator implementation
+  - Screen-based navigation with stack history
+  - Native transitions and gestures
+
+- **react-native-screens ~3.31.1**: Native screen components
+  - Optimized screen rendering
+  - Better performance and memory management
+
+- **react-native-safe-area-context 4.10.5**: Safe area handling
+  - Proper layout on devices with notches/status bars
+  - Consistent spacing across devices
+
+### Mapping & Geolocation
+
+- **Leaflet ^1.9.4**: Open-source JavaScript library for interactive maps
+  - Lightweight and mobile-friendly
+  - Extensive plugin ecosystem
+  - Offline tile support capability
+
+- **React-Leaflet ^4.2.1**: React components for Leaflet maps
+  - React-friendly Leaflet integration
+  - Component-based map configuration
+  - Hooks for map interaction
+
+- **OpenStreetMap Tiles**: Free map tile service
+  - No API key required
+  - Global coverage including Sudan
+  - Can be cached for offline use
+
+### UI Components & Styling
+
+- **React Native StyleSheet**: Built-in styling system
+  - Platform-agnostic styling
+  - Optimized for performance
+
+- **Expo Status Bar ~1.12.1**: Status bar component
+  - Control device status bar appearance
+  - Platform-specific styling
+
+### Development Tools
+
+- **Babel @babel/core ^7.24.0**: JavaScript compiler
+  - Transpiles modern JavaScript
+  - JSX transformation
+  - Configured via Expo
+
+- **ESLint ^8.57.0**: JavaScript linter
+  - Code quality and consistency
+  - Catches common errors
+
+- **eslint-config-expo ^7.1.2**: Expo-specific ESLint configuration
+  - Pre-configured rules for Expo projects
+  - React Native best practices
+
+- **Prettier ^3.2.5**: Code formatter
+  - Automatic code formatting
+  - Consistent code style
+
+- **TypeScript ~5.3.3**: Type-safe JavaScript (optional)
+  - Type checking and IntelliSense
+  - Better developer experience
+
+### Testing
+
+- **Jest ^29.7.0**: JavaScript testing framework
+  - Unit and integration testing
+  - Snapshot testing support
+
+- **@testing-library/react-native ^12.4.3**: React Native testing utilities
+  - Component testing utilities
+  - User-centric testing approach
+
+- **react-test-renderer 18.2.0**: React test renderer
+  - Render React components for testing
+  - Snapshot testing
+
+### Build & Deployment
+
+- **EAS Build** (Expo Application Services): Cloud build service
+  - Build Android APKs and iOS apps in the cloud
+  - No local build environment required
+  - Automated signing and distribution
+
+- **Gradle** (Local Android builds): Android build system
+  - Used for local APK generation
+  - Requires Android Studio setup
+
+### Custom Modules & Utilities
+
+- **API Simulation Module** (`api_simulation/`): Mock API for facility data
+  - Static facility data with intervention metrics
+  - Simulates external organization API
+  - Ready for real API integration
+
+- **Report Validation System** (`src/utils/reportValidation.js`): User report validation
+  - Algorithm to prevent fake/spam reports
+  - Severity-based point adjustments
+  - Prototype implementation with memory-based storage
+
+- **User Point Adjustments** (`src/utils/userPointAdjustments.js`): In-memory adjustment tracking
+  - Tracks user-generated point changes
+  - Resets on app restart (prototype behavior)
+  - Future: Database persistence
+
+- **Intervention Ranking Engine** (`src/utils/interventionRanking.js`): Priority calculation
+  - Multi-factor point system
+  - Considers urgency, population, condition, cascade prevention
+  - Type-specific bonuses
+
+- **Distance & Routing Utilities** (`src/utils/distance.js`, `src/utils/routing.js`):
+  - Haversine formula for distance calculation
+  - Simplified road-based routing algorithm
+  - Offline navigation support
+
+- **Data Synchronization** (`src/utils/dataSync.js`): Data sync management
+  - Syncs API data to local database
+  - Handles online/offline states
+  - Batch updates and conflict resolution
+
+### Platform Support
+
+- **Web**: Browser-based deployment
+  - IndexedDB fallback for database
+  - Leaflet maps with web optimizations
+  - Responsive design
+
+- **Android**: Native Android app
+  - SQLite via expo-sqlite
+  - Native map components
+  - APK build support
+
+- **iOS**: Native iOS app (ready, not fully tested)
+  - SQLite via expo-sqlite
+  - Native map components
+  - Requires macOS for development
+
+### Key Features Enabled by Technology
+
+- **Offline-First Architecture**: SQLite/IndexedDB enables full offline functionality
+- **Cross-Platform Development**: Single codebase for web and mobile
+- **Interactive Maps**: Leaflet provides rich mapping capabilities
+- **Real-Time Updates**: Expo enables OTA updates without app store
+- **Low-End Device Support**: Optimized for devices with limited resources
+- **Data Validation**: Custom algorithms prevent data manipulation
+- **Priority Ranking**: Complex calculation engine for intervention prioritization
 
 ## Installation
 
@@ -174,11 +357,15 @@ The app uses SQLite via `expo-sqlite` for offline-first data storage. The databa
 
 ### Database Schema
 
-- **infrastructure_assets**: Power, water, and facility assets
-- **dependencies**: Cascading failure relationships
+- **infrastructure_assets**: Power, water, shelters, food, and hospital facilities
+  - Types: `power`, `water`, `shelter`, `food`, `hospital`
+  - Tracks condition, supply, population, importance, and intervention points
+- **dependencies**: Cascading failure relationships between facilities
 - **failure_events**: Reported infrastructure failures
 - **interventions**: Prioritized repair actions
 - **facility_timers**: Countdown timers for facility collapse scenarios
+- **user_reports**: User-submitted facility condition reports
+- **public_data_cache**: Cached data from external APIs
 - **sync_status**: Tracks synchronization state for offline sync
 
 See `src/db/README.md` for detailed database documentation.

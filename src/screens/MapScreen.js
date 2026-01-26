@@ -5,16 +5,25 @@
 
 import React, { useEffect, useState } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
-import { executeQuery, executeWrite } from '../db/database';
+import { executeQuery, executeWrite, initDatabase } from '../db/database';
 import MapComponent from '../components/MapComponent';
 import FacilityReportModal from '../components/FacilityReportModal';
 import InterventionRankingList from '../components/InterventionRankingList';
 import DirectionsPanel from '../components/DirectionsPanel';
 import SimulationJoystick from '../components/SimulationJoystick';
 import { calculateInterventionPoints } from '../utils/interventionRanking';
-import { initializeSampleData } from '../utils/dataSync';
+import { initializeSampleData, syncFacilities, fixFacilityStatuses } from '../utils/dataSync';
+import { validateUserReport, getValidationExplanation } from '../utils/reportValidation';
+import { addUserPointAdjustment, clearAllUserAdjustments, getUserPointAdjustment } from '../utils/userPointAdjustments';
 import { findNearestFacility, formatDistance } from '../utils/distance';
 import { generateRoute, getNextInstruction } from '../utils/routing';
+import { establishAllConnections, getFacilityConnections } from '../utils/facilityConnections';
+import { simulateFacilityFailure, getFailedFacilities, getAtRiskFacilities, getFailureSuggestions, loadFailuresFromDatabase, resolveFacilityFailure } from '../utils/failureSimulation';
+import FailureSimulationButton from '../components/FailureSimulationButton';
+import FacilityFailureModal from '../components/FacilityFailureModal';
+import FailureDisplayPanel from '../components/FailureDisplayPanel';
+import FailureSuggestionsModal from '../components/FailureSuggestionsModal';
+import ResolveFailureModal from '../components/ResolveFailureModal';
 
 // Sudan center coordinates
 const SUDAN_CENTER = [15.5, 30.0];
@@ -44,13 +53,46 @@ const MapScreen = () => {
   const [navigationRoute, setNavigationRoute] = useState(null);
   const [currentInstruction, setCurrentInstruction] = useState(null);
   const [nearestFacility, setNearestFacility] = useState(null);
+  const [showSimulationPanel, setShowSimulationPanel] = useState(false);
+  const [facilityConnections, setFacilityConnections] = useState([]);
+  
+  // Failure simulation state
+  const [showFailureModal, setShowFailureModal] = useState(false);
+  const [currentFailure, setCurrentFailure] = useState(null);
+  const [failedFacilitiesList, setFailedFacilitiesList] = useState([]);
+  const [atRiskFacilitiesList, setAtRiskFacilitiesList] = useState([]);
+  const [showFailureSuggestions, setShowFailureSuggestions] = useState(false);
+  const [showResolveFailureModal, setShowResolveFailureModal] = useState(false);
+  const [isSimulatingFailure, setIsSimulatingFailure] = useState(false); // Prevent sync during failure simulation
 
   useEffect(() => {
     let mounted = true;
     
+    // Clear user adjustments on app start (prototype: resets on restart)
+    clearAllUserAdjustments();
+    
+    // Load failures from database - failures persist across page refresh and app restart
+    // Failures are only reset via the "Resolve Failure" button
+    // NOTE: fixFacilityStatuses is now called in the init() function before loading facilities
+    loadFailuresFromDatabase();
+    
     const init = async () => {
       try {
         console.log('MapScreen: Starting initialization...');
+        
+        // Initialize database first
+        await initDatabase();
+        console.log('MapScreen: Database initialized');
+        
+        // Fix facility statuses FIRST, before initializing sample data
+        // This ensures any existing failed facilities are reset to operational
+        try {
+          await fixFacilityStatuses();
+          console.log('MapScreen: Facility statuses fixed before initialization');
+        } catch (fixError) {
+          console.error('MapScreen: Error fixing facility statuses:', fixError);
+        }
+        
         await initializeSampleData();
         console.log('MapScreen: Sample data initialized');
         if (mounted) {
@@ -88,6 +130,17 @@ const MapScreen = () => {
     init();
     setupOnlineListener();
     
+    // Sync with API simulation when online
+    // BUT: Don't sync on initial load - let failures persist
+    // Only sync on initial load, not continuously
+    // The useEffect for isOnline will handle ongoing syncs
+    // (commented out to prevent sync from resetting failures on page load)
+    // if (isOnline && !isSimulatingFailure) {
+    //   syncFacilitiesLocal().catch(err => {
+    //     console.error('Error syncing facilities on load:', err);
+    //   });
+    // }
+    
     return () => {
       mounted = false;
       clearTimeout(timeout);
@@ -95,10 +148,32 @@ const MapScreen = () => {
   }, []);
 
   useEffect(() => {
-    if (isOnline) {
-      syncFacilities();
+    // Don't sync if we're currently simulating a failure - wait for it to complete
+    // Add a delay to prevent sync from running immediately after failure simulation
+    if (isOnline && !isSimulatingFailure) {
+      // Use a longer delay to ensure failure simulation has time to complete and persist
+      const syncTimeout = setTimeout(() => {
+        // Double-check the flag before syncing
+        if (!isSimulatingFailure) {
+          // Also check if there are any failed facilities - if so, don't sync
+          executeQuery('SELECT COUNT(*) as count FROM infrastructure_assets WHERE status = ?', ['failed'])
+            .then(result => {
+              const failedCount = result[0]?.count || 0;
+              if (failedCount === 0 && !isSimulatingFailure) {
+                syncFacilitiesLocal();
+              } else {
+                console.log(`useEffect sync: Skipping sync - ${failedCount} facilities are failed`);
+              }
+            })
+            .catch(err => {
+              console.error('Error checking failed facilities before sync:', err);
+            });
+        }
+      }, 5000); // 5 second delay to ensure failure simulation completes and database write persists
+      
+      return () => clearTimeout(syncTimeout);
     }
-  }, [isOnline]);
+  }, [isOnline, isSimulatingFailure]);
 
 
   // Update nearest facility when location changes
@@ -130,7 +205,13 @@ const MapScreen = () => {
   /**
    * Load facilities from local database
    */
-  const loadFacilities = async () => {
+  const loadFacilities = async (skipIfSimulating = true) => {
+    // Don't reload if we're simulating a failure - this would reset everything
+    if (skipIfSimulating && isSimulatingFailure) {
+      console.log('loadFacilities: Skipping reload - failure simulation in progress');
+      return;
+    }
+    
     try {
       setLoading(true);
       const results = await executeQuery(
@@ -139,26 +220,99 @@ const MapScreen = () => {
       
       console.log(`MapScreen: Loaded ${results.length} facilities from database`);
       
-      // Calculate intervention points for each facility
+      // Fix facilities with missing required fields and calculate points
       const facilitiesWithPoints = await Promise.all(
         results.map(async (facility) => {
-          const points = await calculateInterventionPoints(facility);
-          if (points !== facility.intervention_points) {
+          // Ensure all required fields exist with defaults
+          const needsUpdate = 
+            facility.urgency_hours === undefined || facility.urgency_hours === null ||
+            facility.effort_penalty === undefined || facility.effort_penalty === null ||
+            facility.cascade_prevention_count === undefined || facility.cascade_prevention_count === null;
+          
+          if (needsUpdate) {
+            // Update facility with missing fields
+            await executeWrite(
+              `UPDATE infrastructure_assets 
+               SET urgency_hours = ?, effort_penalty = ?, cascade_prevention_count = ?
+               WHERE id = ?`,
+              [
+                facility.urgency_hours ?? 100, // Default: 100 hours (not urgent)
+                facility.effort_penalty ?? 1.0, // Default: normal effort
+                facility.cascade_prevention_count ?? 0, // Default: no cascade prevention
+                facility.id
+              ]
+            );
+            // Reload facility to get updated values
+            const updated = await executeQuery(
+              'SELECT * FROM infrastructure_assets WHERE id = ?',
+              [facility.id]
+            );
+            if (updated[0]) {
+              facility = updated[0];
+            }
+          }
+          
+          // Calculate base intervention points
+          const basePoints = await calculateInterventionPoints(facility);
+          
+          // Get user point adjustment (from validated reports)
+          const userAdjustment = getUserPointAdjustment(facility.id);
+          
+          // Total points = base points + user adjustment
+          const totalPoints = basePoints + userAdjustment;
+          
+          // Update points if they changed or are NaN
+          if (isNaN(facility.intervention_points) || Math.abs(totalPoints - facility.intervention_points) > 0.1) {
             await executeWrite(
               'UPDATE infrastructure_assets SET intervention_points = ? WHERE id = ?',
-              [points, facility.id]
+              [totalPoints, facility.id]
             );
-            return { ...facility, intervention_points: points };
+            return { ...facility, intervention_points: totalPoints };
           }
-          return facility;
+          return { ...facility, intervention_points: totalPoints };
         })
       );
 
       console.log(`MapScreen: Processed ${facilitiesWithPoints.length} facilities with points`);
-      setFacilities(facilitiesWithPoints);
+      
+      // Check if we're simulating a failure - if so, don't overwrite the state
+      if (isSimulatingFailure) {
+        console.log('loadFacilities: Skipping setFacilities - failure simulation in progress, preserving current state');
+        // Still update the failure lists from what we loaded
+        const failed = facilitiesWithPoints.filter(f => f.status === 'failed');
+        const atRisk = facilitiesWithPoints.filter(f => f.status === 'at_risk');
+        setFailedFacilitiesList(failed);
+        setAtRiskFacilitiesList(atRisk);
+        console.log(`loadFacilities: Updated failure lists (but preserved facilities state) - ${failed.length} failed, ${atRisk.length} at risk`);
+      } else {
+        setFacilities(facilitiesWithPoints);
+        
+        // Update failed and at-risk facilities lists based on actual status
+        // Check actual status from facilities array, not just in-memory Set
+        const failed = facilitiesWithPoints.filter(f => f.status === 'failed');
+        const atRisk = facilitiesWithPoints.filter(f => f.status === 'at_risk');
+        setFailedFacilitiesList(failed);
+        setAtRiskFacilitiesList(atRisk);
+        console.log(`MapScreen: Updated failure lists from loaded facilities - ${failed.length} failed, ${atRisk.length} at risk`);
+      }
+      
+      // Establish connections between facilities
+      try {
+        console.log('MapScreen: Establishing facility connections...');
+        await establishAllConnections(facilitiesWithPoints);
+        
+        // Load connections for display
+        const connections = await getFacilityConnections(facilitiesWithPoints);
+        setFacilityConnections(connections);
+        console.log(`MapScreen: Loaded ${connections.length} facility connections`);
+      } catch (error) {
+        console.error('MapScreen: Error establishing connections:', error);
+        setFacilityConnections([]);
+      }
     } catch (error) {
       console.error('Error loading facilities:', error);
       setFacilities([]); // Set empty array on error
+      setFacilityConnections([]);
     } finally {
       setLoading(false);
     }
@@ -166,12 +320,47 @@ const MapScreen = () => {
 
   /**
    * Sync facilities with online data (when available)
+   * Uses the imported syncFacilities from dataSync
+   * IMPORTANT: This preserves failed/at_risk statuses and won't overwrite them
+   * BUT: Don't sync if we're currently simulating a failure
    */
-  const syncFacilities = async () => {
+  const syncFacilitiesLocal = async () => {
+    // Don't sync if we're simulating a failure - this would reset everything
+    if (isSimulatingFailure) {
+      console.log('SyncFacilitiesLocal: Skipping sync - failure simulation in progress');
+      return;
+    }
+    
     try {
-      // TODO: Implement API sync
-      // For now, just mark as synced
       console.log('Syncing facilities with online data...');
+      // IMPORTANT: syncFacilities should preserve failed and at_risk statuses, but to be safe,
+      // we'll skip sync entirely if there are any failed or at_risk facilities
+      const currentFailed = await executeQuery(
+        'SELECT COUNT(*) as count FROM infrastructure_assets WHERE status = ?',
+        ['failed']
+      );
+      const failedCount = currentFailed[0]?.count || 0;
+      
+      const currentAtRisk = await executeQuery(
+        'SELECT COUNT(*) as count FROM infrastructure_assets WHERE status = ?',
+        ['at_risk']
+      );
+      const atRiskCount = currentAtRisk[0]?.count || 0;
+      
+      if (failedCount > 0 || atRiskCount > 0) {
+        console.log(`SyncFacilitiesLocal: Skipping sync - ${failedCount} facilities are failed and ${atRiskCount} are at_risk. Preserving failure states.`);
+        return;
+      }
+      
+      await syncFacilities(); // Use imported function - preserves failed statuses
+      // Reload facilities and connections after sync
+      // Note: syncFacilities preserves failed statuses, so this is safe
+      // BUT: Only reload if not simulating failure (pass false to skip the check since we already checked)
+      if (!isSimulatingFailure) {
+        await loadFacilities(false); // false = don't check isSimulatingFailure again
+      } else {
+        console.log('syncFacilitiesLocal: Skipping loadFacilities - failure simulation in progress');
+      }
     } catch (error) {
       console.error('Error syncing facilities:', error);
     }
@@ -290,10 +479,27 @@ const MapScreen = () => {
 
   /**
    * Handle report submission
+   * Validates report and applies point adjustments if valid
    */
   const handleReportSubmit = async (reportData) => {
     try {
-      // Save user report
+      if (!selectedFacility) {
+        console.error('No facility selected for report');
+        return;
+      }
+
+      // Validate the report using validation algorithm
+      const validation = validateUserReport(reportData, selectedFacility);
+      
+      console.log('Report validation:', {
+        facility: selectedFacility.name,
+        shouldApply: validation.shouldApply,
+        pointAdjustment: validation.pointAdjustment,
+        severityScore: validation.severityScore,
+        reason: validation.reason,
+      });
+
+      // Save user report to database
       await executeWrite(
         `INSERT INTO user_reports 
          (facility_id, facility_condition, supply_amount, population_amount, facility_importance, reported_by, synced)
@@ -309,56 +515,286 @@ const MapScreen = () => {
         ]
       );
 
-      // Update facility with new data
-      const updateFields = [];
-      const updateValues = [];
-
-      if (reportData.facilityCondition) {
-        updateFields.push('facility_condition = ?');
-        updateValues.push(reportData.facilityCondition);
-      }
-      if (reportData.supplyAmount) {
-        updateFields.push('supply_amount = ?');
-        updateValues.push(reportData.supplyAmount);
-      }
-      if (reportData.populationAmount) {
-        updateFields.push('population_amount = ?');
-        updateValues.push(reportData.populationAmount);
-      }
-      if (reportData.facilityImportance) {
-        updateFields.push('facility_importance = ?');
-        updateValues.push(reportData.facilityImportance);
-      }
-
-      if (updateFields.length > 0) {
-        updateValues.push(selectedFacility.id);
-        await executeWrite(
-          `UPDATE infrastructure_assets 
-           SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP 
-           WHERE id = ?`,
-          updateValues
+      // If report is validated, apply point adjustment
+      if (validation.shouldApply && validation.pointAdjustment > 0) {
+        addUserPointAdjustment(selectedFacility.id, validation.pointAdjustment, reportData);
+        
+        // Recalculate and update facility points
+        const updatedFacility = await executeQuery(
+          'SELECT * FROM infrastructure_assets WHERE id = ?',
+          [selectedFacility.id]
         );
+        
+        if (updatedFacility[0]) {
+          // Recalculate base points
+          const basePoints = await calculateInterventionPoints(updatedFacility[0]);
+          
+          // Get user adjustment
+          const userAdjustment = getUserPointAdjustment(selectedFacility.id);
+          
+          // Total points = base points + user adjustment
+          const totalPoints = basePoints + userAdjustment;
+          
+          // Update facility with new total points
+          await executeWrite(
+            'UPDATE infrastructure_assets SET intervention_points = ? WHERE id = ?',
+            [totalPoints, selectedFacility.id]
+          );
+          
+          // Update selected facility in state to reflect new points
+          setSelectedFacility({
+            ...selectedFacility,
+            intervention_points: totalPoints,
+          });
+          
+          // Reload facilities to show updated ranking
+          await loadFacilities();
+          
+          // Show success message
+          const explanation = getValidationExplanation(validation);
+          console.log('Report applied:', explanation);
+          alert(`Report validated!\n${explanation}\n\nFacility priority updated.`);
+        }
+      } else {
+        // Report received but not applied
+        console.log('Report received but not applied:', validation.reason);
+        alert('Report received.');
       }
 
-      // Recalculate intervention points
-      const updatedFacility = await executeQuery(
-        'SELECT * FROM infrastructure_assets WHERE id = ?',
-        [selectedFacility.id]
-      );
-      if (updatedFacility[0]) {
-        const points = await calculateInterventionPoints(updatedFacility[0]);
-        await executeWrite(
-          'UPDATE infrastructure_assets SET intervention_points = ? WHERE id = ?',
-          [points, selectedFacility.id]
-        );
-      }
-
-      // Reload facilities
-      await loadFacilities();
       setShowReportModal(false);
       setSelectedFacility(null);
     } catch (error) {
       console.error('Error submitting report:', error);
+    }
+  };
+
+  /**
+   * Handle facility failure simulation
+   */
+  const handleFacilityFailure = async (facility) => {
+    try {
+      setIsSimulatingFailure(true); // Prevent sync during failure simulation
+      setShowFailureModal(false);
+      
+      // Simulate the failure
+      const result = await simulateFacilityFailure(
+        facility.id,
+        facilities,
+        facilityConnections
+      );
+      
+      // Set current failure (for suggestions modal if needed)
+      setCurrentFailure(result.failedFacility);
+      
+      // Update failure lists immediately from the result object
+      const failedFromResult = [result.failedFacility];
+      const atRiskFromResult = result.atRiskFacilities || [];
+      
+      console.log(`MapScreen: Setting failure lists - ${failedFromResult.length} failed, ${atRiskFromResult.length} at risk`);
+      console.log(`MapScreen: Failed facility:`, result.failedFacility.name, result.failedFacility.status);
+      
+      setFailedFacilitiesList(failedFromResult);
+      setAtRiskFacilitiesList(atRiskFromResult);
+      
+      // Update the facilities array to reflect the new status without full reload
+      // Use a function to ensure we get the latest state
+      setFacilities(prevFacilities => {
+        const updated = prevFacilities.map(f => {
+          if (f.id === result.failedFacility.id) {
+            console.log(`MapScreen: Updating facility ${f.name} to failed status`);
+            return { ...f, status: 'failed', intervention_points: result.failedFacility.intervention_points };
+          }
+          if (result.atRiskIds && result.atRiskIds.includes(f.id)) {
+            const atRiskFacility = result.atRiskFacilities.find(arf => arf.id === f.id);
+            if (atRiskFacility) {
+              console.log(`MapScreen: Updating facility ${f.name} to at_risk status`);
+              return { ...f, status: 'at_risk', intervention_points: atRiskFacility.intervention_points };
+            }
+            return { ...f, status: 'at_risk' };
+          }
+          return f;
+        });
+        
+        // Verify the update
+        const failedInState = updated.filter(f => f.status === 'failed');
+        console.log(`MapScreen: After state update - ${failedInState.length} facilities with failed status in state`);
+        
+        return updated;
+      });
+      
+      console.log('MapScreen: Failure simulation complete, state updated');
+      
+      // Keep isSimulatingFailure true for longer to prevent sync from running
+      // Verify the database update worked after a delay
+      setTimeout(async () => {
+        try {
+          // Verify the failed facility is actually in the database
+          const verifyFailed = await executeQuery(
+            'SELECT * FROM infrastructure_assets WHERE id = ?',
+            [facility.id]
+          );
+          
+          if (verifyFailed[0]) {
+            console.log(`MapScreen: Verified facility ${verifyFailed[0].name} status in DB: ${verifyFailed[0].status}`);
+            
+            if (verifyFailed[0].status === 'failed') {
+              // Database is correct, update lists from database
+              const freshFacilities = await executeQuery('SELECT * FROM infrastructure_assets');
+              const failed = freshFacilities.filter(f => f.status === 'failed');
+              const atRisk = freshFacilities.filter(f => f.status === 'at_risk');
+              setFailedFacilitiesList(failed);
+              setAtRiskFacilitiesList(atRisk);
+              
+              // Update facilities state without triggering full reload
+              setFacilities(prevFacilities => {
+                const facilityMap = new Map(freshFacilities.map(f => [f.id, f]));
+                return prevFacilities.map(f => {
+                  const updated = facilityMap.get(f.id);
+                  return updated ? { ...f, ...updated } : f;
+                });
+              });
+              
+              console.log(`MapScreen: Updated failure lists from database - ${failed.length} failed, ${atRisk.length} at risk`);
+              
+              // Re-enable sync after a longer delay to ensure everything is stable
+              // But keep it disabled longer to prevent sync from running
+              setTimeout(() => {
+                setIsSimulatingFailure(false);
+                console.log('MapScreen: Re-enabled sync after failure simulation (5 seconds total)');
+              }, 5000); // 5 second delay before re-enabling sync
+            } else {
+              console.error(`MapScreen: ERROR - Facility ${verifyFailed[0].name} is NOT failed in database! Status: ${verifyFailed[0].status}`);
+              // Try to fix it - the write might have failed
+              await executeWrite(
+                `UPDATE infrastructure_assets 
+                 SET status = ? 
+                 WHERE id = ?`,
+                ['failed', facility.id]
+              );
+              console.log(`MapScreen: Attempted to re-write failed status for ${facility.name}`);
+              
+              // Re-enable sync after a delay
+              setTimeout(() => {
+                setIsSimulatingFailure(false);
+              }, 2000);
+            }
+          } else {
+            console.error(`MapScreen: ERROR - Facility ${facility.id} not found in database!`);
+            setIsSimulatingFailure(false);
+          }
+        } catch (error) {
+          console.error('Error updating failure lists:', error);
+          // Re-enable sync even on error, but after a delay
+          setTimeout(() => {
+            setIsSimulatingFailure(false);
+          }, 2000);
+        }
+      }, 1500); // 1.5 second delay to ensure database write completes
+      
+      console.log('Facility failure simulated:', result);
+    } catch (error) {
+      console.error('Error simulating facility failure:', error);
+      alert('Error simulating facility failure. Please try again.');
+    }
+  };
+
+  /**
+   * Handle sending alert to local team
+   */
+  const handleSendAlert = (facility) => {
+    if (!facility) return;
+    
+    // For prototype: just show a message (does nothing technically)
+    // The facility parameter is the failed facility that the alert is for
+    setCurrentFailure(facility);
+    setShowFailureSuggestions(true);
+    console.log(`MapScreen: Alert sent for facility: ${facility.name}`);
+  };
+
+  /**
+   * Handle resolving a facility failure
+   */
+  const handleResolveFailure = async (facility) => {
+    try {
+      console.log(`MapScreen: Resolving failure for facility: ${facility.name} (ID: ${facility.id})`);
+      setShowResolveFailureModal(false);
+      
+      // Set flag to prevent sync from running during resolve
+      setIsSimulatingFailure(true);
+      console.log(`MapScreen: Set isSimulatingFailure=true to prevent sync during resolve`);
+      
+      // Resolve the failure - this updates the database
+      const resolvedFacility = await resolveFacilityFailure(facility.id, facilities);
+      console.log(`MapScreen: Database updated for ${facility.name}`, resolvedFacility);
+      
+      // Wait a moment for database write to complete
+      await new Promise(resolve => setTimeout(resolve, 300));
+      
+      // Verify the database update worked
+      const verifyResolved = await executeQuery(
+        'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
+        [facility.id]
+      );
+      
+      if (verifyResolved[0]) {
+        console.log(`MapScreen: Verified facility ${verifyResolved[0].name} status in DB: ${verifyResolved[0].status}`);
+        
+        if (verifyResolved[0].status === 'operational') {
+          console.log(`MapScreen: ✓ Facility ${facility.name} successfully resolved to operational`);
+        } else {
+          console.error(`MapScreen: ✗ ERROR - Facility ${facility.name} is NOT operational! Status: ${verifyResolved[0].status}`);
+          // Try to fix it
+          await executeWrite(
+            `UPDATE infrastructure_assets 
+             SET status = ? 
+             WHERE id = ?`,
+            ['operational', facility.id]
+          );
+          await new Promise(resolve => setTimeout(resolve, 200));
+        }
+      }
+      
+      // Reload facilities from database to get the updated status
+      await loadFacilities(false);
+      console.log(`MapScreen: Facilities reloaded after resolving ${facility.name}`);
+      
+      // Update failed and at-risk facilities lists from the reloaded facilities
+      // Get fresh data from database
+      const freshFacilities = await executeQuery('SELECT * FROM infrastructure_assets');
+      const failed = freshFacilities.filter(f => f.status === 'failed');
+      const atRisk = freshFacilities.filter(f => f.status === 'at_risk');
+      
+      setFailedFacilitiesList(failed);
+      setAtRiskFacilitiesList(atRisk);
+      console.log(`MapScreen: Updated failure lists after resolve - ${failed.length} failed, ${atRisk.length} at risk`);
+      
+      // Also update the facilities state to reflect the change immediately
+      setFacilities(prevFacilities => {
+        return prevFacilities.map(f => {
+          if (f.id === facility.id) {
+            // Update this facility to operational
+            const updatedFacility = freshFacilities.find(ff => ff.id === facility.id);
+            if (updatedFacility) {
+              console.log(`MapScreen: Updating facility ${f.name} in state to ${updatedFacility.status}`);
+              return updatedFacility;
+            }
+            return { ...f, status: 'operational' };
+          }
+          return f;
+        });
+      });
+      
+      // Re-enable sync after a delay to ensure everything is stable
+      setTimeout(() => {
+        setIsSimulatingFailure(false);
+        console.log('MapScreen: Re-enabled sync after resolve failure');
+      }, 3000); // 3 second delay before re-enabling sync
+      
+      console.log(`MapScreen: Facility failure resolved successfully: ${facility.name}`);
+    } catch (error) {
+      console.error('Error resolving facility failure:', error);
+      setIsSimulatingFailure(false); // Re-enable sync on error
+      alert('Error resolving facility failure. Please try again.');
     }
   };
 
@@ -390,6 +826,8 @@ const MapScreen = () => {
           route={navigationRoute}
           onFacilityClick={handleFacilityClick}
           isSimulating={isSimulating}
+          connections={Array.isArray(facilityConnections) ? facilityConnections : []}
+          topPriorityFacilities={Array.isArray(facilities) ? facilities.slice(0, 3) : []}
         />
       </View>
       
@@ -469,15 +907,48 @@ const MapScreen = () => {
         />
       )}
 
-      {/* Simulation Toggle */}
-      <Pressable
-        style={[styles.simulationButton, isSimulating && styles.simulationButtonActive]}
-        onPress={toggleSimulation}
-      >
-        <Text style={[styles.simulationButtonText, isSimulating && styles.simulationButtonTextActive]}>
-          {isSimulating ? 'Stop Simulation' : 'Simulate Walking'}
-        </Text>
-      </Pressable>
+      {/* Simulation Panel Toggle (Admin Panel) */}
+      <View style={styles.simulationPanel}>
+        {/* Arrow Toggle Button */}
+        <Pressable
+          style={styles.simulationToggleArrow}
+          onPress={() => setShowSimulationPanel(!showSimulationPanel)}
+        >
+          <Text style={styles.simulationToggleArrowText}>
+            {showSimulationPanel ? '◀' : '▶'}
+          </Text>
+        </Pressable>
+        
+        {/* Simulation Button (Hidden by default) */}
+        {showSimulationPanel && (
+          <>
+            <Pressable
+              style={[styles.simulationButton, isSimulating && styles.simulationButtonActive]}
+              onPress={toggleSimulation}
+            >
+              <Text style={[styles.simulationButtonText, isSimulating && styles.simulationButtonTextActive]}>
+                {isSimulating ? 'Stop Simulation' : 'Simulate Walking'}
+              </Text>
+            </Pressable>
+            
+            {/* Failure Simulation Button */}
+            <FailureSimulationButton
+              isVisible={showSimulationPanel}
+              onPress={() => setShowFailureModal(true)}
+            />
+            
+            {/* Resolve Failure Button */}
+            {failedFacilitiesList.length > 0 && (
+              <Pressable
+                style={styles.resolveFailureButton}
+                onPress={() => setShowResolveFailureModal(true)}
+              >
+                <Text style={styles.resolveFailureButtonText}>Resolve Failure</Text>
+              </Pressable>
+            )}
+          </>
+        )}
+      </View>
 
       {/* Intervention Ranking Toggle */}
       <Pressable
@@ -540,6 +1011,45 @@ const MapScreen = () => {
           {isOnline ? '● Online' : '○ Offline'}
         </Text>
       </View>
+
+      {/* Facility Failure Modal */}
+      <FacilityFailureModal
+        visible={showFailureModal}
+        facilities={facilities}
+        onClose={() => setShowFailureModal(false)}
+        onSelectFacility={handleFacilityFailure}
+      />
+
+      {/* Failure Display Panel */}
+      <FailureDisplayPanel
+        failedFacilities={failedFacilitiesList}
+        atRiskFacilities={atRiskFacilitiesList}
+        onFacilityClick={(facility) => {
+          setSelectedFacility(facility);
+        }}
+        onSendAlert={handleSendAlert}
+      />
+
+      {/* Failure Suggestions Modal */}
+      {currentFailure && (
+        <FailureSuggestionsModal
+          visible={showFailureSuggestions}
+          facility={currentFailure}
+          suggestions={getFailureSuggestions(currentFailure)}
+          onClose={() => {
+            setShowFailureSuggestions(false);
+            setCurrentFailure(null);
+          }}
+        />
+      )}
+
+      {/* Resolve Failure Modal */}
+      <ResolveFailureModal
+        visible={showResolveFailureModal}
+        failedFacilities={failedFacilitiesList}
+        onClose={() => setShowResolveFailureModal(false)}
+        onResolveFacility={handleResolveFailure}
+      />
     </View>
   );
 };
@@ -623,19 +1133,45 @@ const styles = StyleSheet.create({
     color: '#333333',
     fontSize: 16,
   },
-  simulationButton: {
+  simulationPanel: {
     position: 'absolute',
     top: 16,
     right: 16,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    zIndex: 1000,
+  },
+  simulationToggleArrow: {
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    padding: 8,
+    borderRadius: 4,
+    borderTopLeftRadius: 8,
+    borderBottomLeftRadius: 8,
+    minWidth: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  simulationToggleArrowText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  simulationButton: {
     backgroundColor: '#ffffff',
     padding: 12,
     borderRadius: 8,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
-    zIndex: 1000,
   },
   simulationButtonActive: {
     backgroundColor: '#ff9900',
@@ -647,6 +1183,26 @@ const styles = StyleSheet.create({
   },
   simulationButtonTextActive: {
     color: '#ffffff',
+  },
+  resolveFailureButton: {
+    backgroundColor: '#00cc00',
+    padding: 12,
+    borderRadius: 8,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    marginTop: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    alignItems: 'center',
+    minWidth: 120,
+  },
+  resolveFailureButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   rankingButton: {
     position: 'absolute',

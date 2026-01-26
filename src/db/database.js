@@ -101,7 +101,7 @@ const createSchema = async () => {
       CREATE TABLE IF NOT EXISTS infrastructure_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         name TEXT NOT NULL,
-        type TEXT NOT NULL CHECK(type IN ('power', 'water', 'shelter', 'food')),
+        type TEXT NOT NULL CHECK(type IN ('power', 'water', 'shelter', 'food', 'hospital')),
         location_lat REAL NOT NULL,
         location_lng REAL NOT NULL,
         status TEXT NOT NULL DEFAULT 'operational' CHECK(status IN ('operational', 'failed', 'at_risk')),
@@ -111,6 +111,7 @@ const createSchema = async () => {
         facility_importance TEXT DEFAULT 'moderate' CHECK(facility_importance IN ('very_important', 'important', 'moderate', 'not_important')),
         intervention_points REAL DEFAULT 0,
         people_restored INTEGER DEFAULT 0,
+        population_served INTEGER DEFAULT 0,
         urgency_hours REAL DEFAULT 0,
         effort_penalty REAL DEFAULT 1.0,
         cascade_prevention_count INTEGER DEFAULT 0,
@@ -121,6 +122,18 @@ const createSchema = async () => {
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
     `);
+    
+    // Migration: Add population_served column if it doesn't exist (for existing databases)
+    try {
+      await db.execAsync(`
+        ALTER TABLE infrastructure_assets ADD COLUMN population_served INTEGER DEFAULT 0;
+      `);
+    } catch (error) {
+      // Column already exists, ignore error
+      if (!error.message.includes('duplicate column')) {
+        console.warn('Migration warning (expected if column exists):', error.message);
+      }
+    }
 
     // Dependencies table (represents cascading failure relationships)
     await db.execAsync(`

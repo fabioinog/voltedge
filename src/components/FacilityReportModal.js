@@ -52,7 +52,7 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
     const reportData = {
       facilityCondition,
       supplyAmount: facility.type === 'shelter' || facility.type === 'food' || facility.type === 'water' ? supplyAmount : null,
-      populationAmount: facility.type === 'shelter' ? populationAmount : null,
+      populationAmount: facility.type === 'shelter' || facility.type === 'hospital' ? populationAmount : null,
       facilityImportance,
     };
 
@@ -149,8 +149,8 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
               </View>
             )}
 
-            {/* Population Amount (only for shelters) */}
-            {facility?.type === 'shelter' && (
+            {/* Population Amount (for shelters and hospitals) */}
+            {(facility?.type === 'shelter' || facility?.type === 'hospital') && (
               <View style={styles.section}>
                 <Text style={styles.label}>{t('populationAmount')}</Text>
                 <View style={styles.optionsContainer}>

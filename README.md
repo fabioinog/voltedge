@@ -79,13 +79,6 @@ VoltEdge uses a simulated API (`api_simulation/`) to provide facility data for i
 
 The simulated API generates facility data with the following fields:
 
-**Basic Information:**
-- `id`: Unique facility identifier
-- `name`: Facility name
-- `type`: Facility type (`water`, `power`, `shelter`, `food`, `hospital`)
-- `location_lat` / `location_lng`: Geographic coordinates
-- `status`: Current status (`operational`, `failed`, `at_risk`)
-
 **Importance Metrics:**
 - `facility_importance`: Importance level (`very_important`, `important`, `moderate`, `not_important`)
 - `facility_condition`: Physical condition (`excellent`, `good`, `fair`, `poor`, `bad`)
@@ -106,23 +99,6 @@ The simulated API generates facility data with the following fields:
 **Cascade Metrics:**
 - `cascade_prevention_count`: Number of other facility failures prevented by fixing this facility
 
-### Facility Types
-
-The API provides data for 20 facilities across Sudan, including:
-- **Water facilities**: Treatment plants, distribution centers, well stations
-- **Power facilities**: Power stations, substations, distribution hubs
-- **Shelters**: Emergency shelters and refugee camps
-- **Food facilities**: Distribution centers and warehouses
-- **Hospitals**: Teaching hospitals, general hospitals, medical centers
-
-### API Endpoints (Simulated)
-
-- `fetchAllFacilities()`: Returns all facilities, optionally filtered by type or status
-- `fetchFacilityData(id)`: Returns data for a specific facility
-- `fetchFacilitiesByType(type)`: Returns facilities of a specific type
-- `fetchFacilitiesByStatus(status)`: Returns facilities with a specific status
-- `getFacilityMetrics(id)`: Returns metrics needed for intervention ranking
-
 ## Database
 
 The app uses SQLite via `expo-sqlite` for offline-first data storage. On web, it falls back to IndexedDB. The database is initialized automatically when the app starts.
@@ -135,17 +111,6 @@ The app uses SQLite via `expo-sqlite` for offline-first data storage. On web, it
 - interventions: Prioritized repair actions
 - user_reports: User-submitted facility condition reports
 - sync_status: Tracks synchronization state for offline sync
-
-## Development Guidelines
-
-- Use functional components with hooks
-- Variable names: camelCase
-- Component names: PascalCase
-- File and folder names: snake_case
-- Prefer `const` over `let`
-- Use StyleSheet for styling
-- All core features must work offline
-
 
 ## License
 

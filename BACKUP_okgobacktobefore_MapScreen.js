@@ -73,7 +73,8 @@ const MapScreen = () => {
     
     // Load failures from database - failures persist across page refresh and app restart
     // Failures are only reset via the "Resolve Failure" button
-    // NOTE: fixFacilityStatuses is NOT called anymore - failures persist across refreshes
+    // NOTE: fixFacilityStatuses is now called in the init() function before loading facilities
+    loadFailuresFromDatabase();
     
     const init = async () => {
       try {
@@ -83,18 +84,17 @@ const MapScreen = () => {
         await initDatabase();
         console.log('MapScreen: Database initialized');
         
-        // NOTE: fixFacilityStatuses() is NOT called here anymore
-        // Failures should persist across page refreshes and only be reset via "Resolve Failure" button
-        // This allows users to refresh the page without losing their failure simulation state
+        // Fix facility statuses FIRST, before initializing sample data
+        // This ensures any existing failed facilities are reset to operational
+        try {
+          await fixFacilityStatuses();
+          console.log('MapScreen: Facility statuses fixed before initialization');
+        } catch (fixError) {
+          console.error('MapScreen: Error fixing facility statuses:', fixError);
+        }
         
         await initializeSampleData();
         console.log('MapScreen: Sample data initialized');
-        
-        // Load failures from database AFTER database is initialized
-        // This ensures failures persist across page refreshes
-        await loadFailuresFromDatabase();
-        console.log('MapScreen: Failures loaded from database');
-        
         if (mounted) {
           await loadFacilities();
           console.log('MapScreen: Facilities loaded');

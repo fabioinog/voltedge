@@ -347,8 +347,8 @@ export const fixFacilityStatuses = async () => {
  */
 export const initializeSampleData = async () => {
   try {
-    // First, fix any existing facilities with failed/at_risk status
-    await fixFacilityStatuses();
+    // NOTE: fixFacilityStatuses() is NOT called here anymore
+    // Failures should persist across page refreshes and only be reset via "Resolve Failure" button
     
     // Check if we can query the database
     let existing;
@@ -383,8 +383,8 @@ export const initializeSampleData = async () => {
       }
     } else if (count >= 30) {
       console.log(`Sample data already exists with ${count} facilities`);
-      // Still fix any failed/at_risk statuses even if data exists
-      await fixFacilityStatuses();
+      // NOTE: fixFacilityStatuses() is NOT called here anymore
+      // Failures should persist across page refreshes
       return;
     }
 

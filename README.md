@@ -71,6 +71,58 @@ The app will open at `http://localhost:8081` (or the next available port).
 - Leaflet ^1.9.4: Interactive maps
 - React-Leaflet ^4.2.1: React components for Leaflet
 
+## Simulated API
+
+VoltEdge uses a simulated API (`api_simulation/`) to provide facility data for intervention ranking. This is a proof of concept that will be replaced with actual API calls to real data sources in production.
+
+### API Data Structure
+
+The simulated API generates facility data with the following fields:
+
+**Basic Information:**
+- `id`: Unique facility identifier
+- `name`: Facility name
+- `type`: Facility type (`water`, `power`, `shelter`, `food`, `hospital`)
+- `location_lat` / `location_lng`: Geographic coordinates
+- `status`: Current status (`operational`, `failed`, `at_risk`)
+
+**Importance Metrics:**
+- `facility_importance`: Importance level (`very_important`, `important`, `moderate`, `not_important`)
+- `facility_condition`: Physical condition (`excellent`, `good`, `fair`, `poor`, `bad`)
+
+**Population Metrics:**
+- `population_amount`: Population at facility (`very_high`, `high`, `medium`, `low`) - for shelters and hospitals
+- `population_served`: Number of people served by the facility (numeric) - for water, power, and food facilities
+
+**Supply Metrics:**
+- `supply_amount`: Supply level (`very_high`, `high`, `medium`, `low`, `very_low`) - for water, power, and food facilities
+
+**Urgency Metrics:**
+- `urgency_hours`: Hours until facility failure (0 = already failed, lower = more urgent)
+
+**Effort Metrics:**
+- `effort_penalty`: Repair difficulty multiplier (higher = more difficult/expensive to repair)
+
+**Cascade Metrics:**
+- `cascade_prevention_count`: Number of other facility failures prevented by fixing this facility
+
+### Facility Types
+
+The API provides data for 20 facilities across Sudan, including:
+- **Water facilities**: Treatment plants, distribution centers, well stations
+- **Power facilities**: Power stations, substations, distribution hubs
+- **Shelters**: Emergency shelters and refugee camps
+- **Food facilities**: Distribution centers and warehouses
+- **Hospitals**: Teaching hospitals, general hospitals, medical centers
+
+### API Endpoints (Simulated)
+
+- `fetchAllFacilities()`: Returns all facilities, optionally filtered by type or status
+- `fetchFacilityData(id)`: Returns data for a specific facility
+- `fetchFacilitiesByType(type)`: Returns facilities of a specific type
+- `fetchFacilitiesByStatus(status)`: Returns facilities with a specific status
+- `getFacilityMetrics(id)`: Returns metrics needed for intervention ranking
+
 ## Database
 
 The app uses SQLite via `expo-sqlite` for offline-first data storage. On web, it falls back to IndexedDB. The database is initialized automatically when the app starts.

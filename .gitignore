@@ -81,3 +81,4 @@ coverage/
 # Cursor rules
 .cursor/
 .cursorrules
+.cursor/rules

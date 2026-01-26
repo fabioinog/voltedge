@@ -1,16 +1,9 @@
-/**
- * Map Component - Leaflet map for web, centered on Sudan
- * Uses HTML/CSS directly on web, React Native on mobile
- */
-
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import FacilityConnections from './FacilityConnections';
+import FacilityConnections from './facility_connections';
 
-// For web, we need to handle div elements differently
 const WebDiv = Platform.OS === 'web' ? 'div' : View;
 
-// Web-only: Use Leaflet for mapping
 let L = null;
 let MapContainer = null;
 let TileLayer = null;
@@ -22,7 +15,6 @@ let MapInitializer = null;
 let MapViewPreserver = null;
 
 if (Platform.OS === 'web') {
-  // Dynamically import Leaflet only on web
   try {
     L = require('leaflet');
     const reactLeaflet = require('react-leaflet');
@@ -30,12 +22,11 @@ if (Platform.OS === 'web') {
     TileLayer = reactLeaflet.TileLayer;
     Marker = reactLeaflet.Marker;
     Popup = reactLeaflet.Popup;
-    MapBounds = require('./MapBounds').default;
-    MapCenter = require('./MapCenter').default;
-    MapInitializer = require('./MapInitializer').default;
-    MapViewPreserver = require('./MapViewPreserver').default;
+    MapBounds = require('./map_bounds').default;
+    MapCenter = require('./map_center').default;
+    MapInitializer = require('./map_initializer').default;
+    MapViewPreserver = require('./map_view_preserver').default;
 
-    // Fix Leaflet default icon issue
     delete L.Icon.Default.prototype._getIconUrl;
     L.Icon.Default.mergeOptions({
       iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
@@ -78,26 +69,20 @@ const getFacilityIcon = (type) => {
 };
 
 
-const createCustomIcon = (type, status, points, isFailed = false) => {
+const createCustomIcon = (type, status, points, isFailed = false, facilityName = '') => {
   if (!L) return null;
 
-  // Failed facilities get red color and warning indicator
   const color = isFailed || status === 'failed' ? '#cc0000' : getMarkerColor(type);
-  const size = Math.min(30 + (points / 10), 40); // Size based on priority points
+  const size = Math.min(30 + (points / 10), 40);
   const icon = getFacilityIcon(type);
   
-  // Add warning indicator for failed facilities
   const warningIndicator = isFailed || status === 'failed' ? '⚠️' : '';
 
-  // Enhanced red glow for failed facilities
   const failedGlow = isFailed || status === 'failed' 
     ? '0 0 15px rgba(255,0,0,1), 0 0 25px rgba(255,0,0,0.8), 0 0 35px rgba(255,0,0,0.6)' 
     : '0 2px 4px rgba(0,0,0,0.3)';
   
-  // Create a unique class name for failed facilities to ensure CSS works
   const markerClass = isFailed || status === 'failed' ? 'custom-marker-failed' : 'custom-marker';
-  
-  // For failed facilities, use inline styles with !important to ensure visibility
   const inlineStyle = isFailed || status === 'failed' 
     ? `background-color: ${color} !important;
        width: ${size}px !important;
@@ -134,7 +119,7 @@ const createCustomIcon = (type, status, points, isFailed = false) => {
   return L.divIcon({
     className: markerClass,
     html: `
-      <div class="${markerClass}-inner" style="${inlineStyle}">
+      <div class="${markerClass}-inner" style="${inlineStyle}" title="${facilityName || 'Facility'}">
         ${icon}
         ${warningIndicator ? `<div style="position: absolute; top: -8px; right: -8px; font-size: 16px; z-index: 1001;">${warningIndicator}</div>` : ''}
       </div>
@@ -456,7 +441,9 @@ const MapComponent = ({ center, zoom, facilities, userLocation, route, onFacilit
                 <Marker
                   key={facility.id}
                   position={[facility.location_lat, facility.location_lng]}
-                  icon={createCustomIcon(facility.type, facility.status, facility.intervention_points || 0, isFailed)}
+                  icon={createCustomIcon(facility.type, facility.status, facility.intervention_points || 0, isFailed, facility.name)}
+                  title={facility.name || 'Facility'}
+                  alt={facility.name || 'Facility'}
                   eventHandlers={{
                     click: (e) => {
                       // Completely prevent popup from opening

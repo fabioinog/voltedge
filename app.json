@@ -27,8 +27,8 @@
       "permissions": []
     },
     "web": {
-      "favicon": "./assets/favicon.png",
-      "bundler": "metro"
+      "bundler": "metro",
+      "name": "VoltEdge"
     },
     "scheme": "voltedge",
     "extra": {

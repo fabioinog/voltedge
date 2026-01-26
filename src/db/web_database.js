@@ -71,9 +71,6 @@ const initIndexedDB = () => {
   });
 };
 
-/**
- * Execute a query (SELECT)
- */
 const executeQueryIndexedDB = async (storeName, filterFn = null) => {
   return new Promise((resolve, reject) => {
     if (!db) {
@@ -99,9 +96,6 @@ const executeQueryIndexedDB = async (storeName, filterFn = null) => {
   });
 };
 
-/**
- * Execute a write operation (INSERT, UPDATE, DELETE)
- */
 const executeWriteIndexedDB = async (operation, storeName, data, key = null) => {
   return new Promise((resolve, reject) => {
     if (!db) {
@@ -134,11 +128,7 @@ const executeWriteIndexedDB = async (operation, storeName, data, key = null) => 
   });
 };
 
-/**
- * SQL-like query interface for IndexedDB
- */
 const queryIndexedDB = async (query, params = []) => {
-  // Simple SQL parser for common queries
   const lowerQuery = query.toLowerCase().trim();
 
   // SELECT queries

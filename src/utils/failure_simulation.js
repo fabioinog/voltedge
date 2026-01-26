@@ -1,51 +1,23 @@
-/**
- * Failure Simulation Utility
- * Manages facility failures and cascading effects
- * 
- * Failures persist across page refresh but reset on app restart (Ctrl+C)
- */
-
 import { executeQuery, executeWrite } from '../db/database';
-import { getFacilityConnections } from './facilityConnections';
-import { calculateInterventionPoints } from './interventionRanking';
+import { getFacilityConnections } from './facility_connections';
+import { calculateInterventionPoints } from './intervention_ranking';
 import { calculateDistance } from './distance';
 
-// In-memory storage for failed facilities
-// On app restart (Ctrl+C), this is cleared and failures are reset
-// On page refresh, this is loaded from database
 const failedFacilities = new Set();
 const atRiskFacilities = new Set();
 
-/**
- * Get all failed facility IDs
- * @returns {Array<number>} Array of failed facility IDs
- */
 export const getFailedFacilities = () => {
   return Array.from(failedFacilities);
 };
 
-/**
- * Get all at-risk facility IDs
- * @returns {Array<number>} Array of at-risk facility IDs
- */
 export const getAtRiskFacilities = () => {
   return Array.from(atRiskFacilities);
 };
 
-/**
- * Check if a facility is failed
- * @param {number} facilityId - Facility ID
- * @returns {boolean} True if facility is failed
- */
 export const isFacilityFailed = (facilityId) => {
   return failedFacilities.has(facilityId);
 };
 
-/**
- * Check if a facility is at risk
- * @param {number} facilityId - Facility ID
- * @returns {boolean} True if facility is at risk
- */
 export const isFacilityAtRisk = (facilityId) => {
   return atRiskFacilities.has(facilityId);
 };
@@ -68,10 +40,7 @@ const calculateCascadingFailures = (failedFacilityId, allFacilities, connections
     return [];
   }
   
-  // Maximum distance for facilities to be considered "at risk" (in meters)
-  // 50km = 50,000 meters - facilities within this distance are at risk
-  // Reduced from 100km to make it more realistic
-  const MAX_RISK_DISTANCE = 50000; // 50km
+  const MAX_RISK_DISTANCE = 50000;
   
   const failedLat = failedFacility.location_lat || failedFacility.lat;
   const failedLng = failedFacility.location_lng || failedFacility.lng;
@@ -81,29 +50,22 @@ const calculateCascadingFailures = (failedFacilityId, allFacilities, connections
     return [];
   }
   
-  console.log(`calculateCascadingFailures: ${failedFacility.name} (${failedLat}, ${failedLng}) failed. Checking ${allFacilities.length} facilities...`);
-  
-  // Check all facilities and find those within the risk distance
   allFacilities.forEach((facility) => {
-    // Skip the failed facility itself
     if (facility.id === failedFacilityId) {
       return;
     }
     
-    // Skip facilities that are already failed (they should stay failed)
     if (facility.status === 'failed') {
       return;
     }
     
-    // Get facility coordinates
     const facilityLat = facility.location_lat || facility.lat;
     const facilityLng = facility.location_lng || facility.lng;
     
     if (!facilityLat || !facilityLng) {
-      return; // Skip facilities without coordinates
+      return;
     }
     
-    // Calculate distance from failed facility to this facility
     const distance = calculateDistance(
       failedLat,
       failedLng,
@@ -111,31 +73,18 @@ const calculateCascadingFailures = (failedFacilityId, allFacilities, connections
       facilityLng
     );
     
-    // If facility is within risk distance, mark it as at risk (NOT failed)
     if (distance <= MAX_RISK_DISTANCE) {
       atRiskIds.add(facility.id);
-      console.log(`  - ${facility.name} is ${(distance / 1000).toFixed(1)}km away - marking as AT RISK (not failed)`);
     }
   });
-  
-  console.log(`calculateCascadingFailures: ${failedFacility.name} failed. ${atRiskIds.size} nearby facilities marked as AT RISK (within ${MAX_RISK_DISTANCE / 1000}km). Only the original facility is FAILED.`);
   
   return Array.from(atRiskIds);
 };
 
-/**
- * Simulate a facility failure
- * @param {number} facilityId - ID of facility to fail
- * @param {Array} allFacilities - All facilities
- * @param {Array} connections - All facility connections
- * @returns {Object} Result object with failed facility and at-risk facilities
- */
 export const simulateFacilityFailure = async (facilityId, allFacilities, connections) => {
   try {
-    // Get the facility to fail
     let failedFacility = allFacilities.find(f => f.id === facilityId);
     if (!failedFacility) {
-      // Try to load from database if not in allFacilities
       const dbFacility = await executeQuery(
         'SELECT * FROM infrastructure_assets WHERE id = ?',
         [facilityId]
@@ -147,12 +96,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       }
     }
     
-    // Mark facility as failed
     failedFacilities.add(facilityId);
-    
-    // Update facility status in database
-    // IMPORTANT: Use explicit parameterized query to ensure it works with web database
-    console.log(`simulateFacilityFailure: Attempting to update ${failedFacility.name} (ID: ${facilityId}) to failed status...`);
     
     const updateResult = await executeWrite(
       `UPDATE infrastructure_assets 
@@ -161,25 +105,15 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       ['failed', facilityId]
     );
     
-    console.log(`simulateFacilityFailure: Update result:`, updateResult);
-    
-    // For web database (IndexedDB), we need to ensure the transaction completes
-    // Wait a bit longer for IndexedDB to commit
     await new Promise(resolve => setTimeout(resolve, 200));
     
-    // Verify the update worked - try multiple times if needed
     let verifyUpdate = await executeQuery(
       'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
       [facilityId]
     );
     
-    console.log(`simulateFacilityFailure: First verification - Found facility:`, verifyUpdate[0]);
-    
     let attempts = 0;
     while (verifyUpdate[0] && verifyUpdate[0].status !== 'failed' && attempts < 5) {
-      console.log(`simulateFacilityFailure: Verification attempt ${attempts + 1} - status is '${verifyUpdate[0]?.status}', retrying update...`);
-      
-      // Try the update again
       await executeWrite(
         `UPDATE infrastructure_assets 
          SET status = ? 
@@ -195,23 +129,12 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       attempts++;
     }
     
-    if (verifyUpdate[0]?.status === 'failed') {
-      console.log(`simulateFacilityFailure: ✓ SUCCESS - Verified status for ${failedFacility.name}: ${verifyUpdate[0]?.status}`);
-    } else {
-      console.error(`simulateFacilityFailure: ✗ ERROR - Status verification failed after ${attempts} attempts! Expected 'failed', got '${verifyUpdate[0]?.status}'`);
-      console.error(`simulateFacilityFailure: Full facility data:`, verifyUpdate[0]);
-    }
-    
-    // Calculate cascading effects
     const atRiskIds = calculateCascadingFailures(facilityId, allFacilities, connections);
     
-    // Mark facilities as at risk
     atRiskIds.forEach((id) => {
       atRiskFacilities.add(id);
     });
     
-    // Update at-risk facility statuses in database
-    console.log(`simulateFacilityFailure: Updating ${atRiskIds.length} facilities to at_risk status in database...`);
     for (const atRiskId of atRiskIds) {
       const updateResult = await executeWrite(
         `UPDATE infrastructure_assets 
@@ -219,20 +142,14 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
          WHERE id = ? AND status != 'failed'`,
         ['at_risk', atRiskId]
       );
-      console.log(`simulateFacilityFailure: Updated facility ${atRiskId} to at_risk status. Update result:`, updateResult);
       
-      // Verify the update worked
       await new Promise(resolve => setTimeout(resolve, 100));
       const verifyAtRisk = await executeQuery(
         'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
         [atRiskId]
       );
       
-      if (verifyAtRisk[0] && verifyAtRisk[0].status === 'at_risk') {
-        console.log(`simulateFacilityFailure: ✓ Verified ${verifyAtRisk[0].name} is now at_risk`);
-      } else {
-        console.error(`simulateFacilityFailure: ✗ ERROR - Facility ${atRiskId} is NOT at_risk! Status: ${verifyAtRisk[0]?.status}`);
-        // Try again
+      if (verifyAtRisk[0] && verifyAtRisk[0].status !== 'at_risk') {
         await executeWrite(
           `UPDATE infrastructure_assets 
            SET status = ? 
@@ -241,9 +158,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
         );
       }
     }
-    console.log(`simulateFacilityFailure: Completed updating ${atRiskIds.length} facilities to at_risk status`);
     
-    // Recalculate points for failed facility (with failed status)
     const failedFacilityUpdated = { ...failedFacility, status: 'failed' };
     const failedPoints = await calculateInterventionPoints(failedFacilityUpdated);
     await executeWrite(
@@ -253,7 +168,6 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       [failedPoints, facilityId]
     );
     
-    // Recalculate points for at-risk facilities (with at_risk status)
     for (const atRiskId of atRiskIds) {
       let atRiskFacility = allFacilities.find(f => f.id === atRiskId);
       if (!atRiskFacility) {
@@ -362,21 +276,10 @@ export const loadFailuresFromDatabase = async () => {
   }
 };
 
-/**
- * Resolve a single facility failure
- * @param {number} facilityId - ID of facility to resolve
- * @param {Array} allFacilities - All facilities
- * @returns {Promise<Object>} Updated facility
- */
 export const resolveFacilityFailure = async (facilityId, allFacilities) => {
   try {
-    console.log(`resolveFacilityFailure: Starting to resolve facility ID ${facilityId}`);
-    
-    // Remove from failed facilities
     failedFacilities.delete(facilityId);
-    console.log(`resolveFacilityFailure: Removed facility ${facilityId} from failedFacilities set`);
     
-    // Get the facility first to get its name for logging
     let facility = allFacilities.find(f => f.id === facilityId);
     if (!facility) {
       const dbFacility = await executeQuery(
@@ -389,37 +292,24 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
     }
     
     if (!facility) {
-      console.error(`resolveFacilityFailure: Facility ${facilityId} not found!`);
       throw new Error(`Facility ${facilityId} not found`);
     }
     
-    console.log(`resolveFacilityFailure: Resolving ${facility.name} (ID: ${facilityId}) to operational status`);
-    
-    // Update facility status to operational - use parameterized query
     const updateResult = await executeWrite(
       `UPDATE infrastructure_assets 
        SET status = ? 
        WHERE id = ?`,
       ['operational', facilityId]
     );
-    console.log(`resolveFacilityFailure: Update result:`, updateResult);
     
-    // Wait for database write to complete
     await new Promise(resolve => setTimeout(resolve, 200));
     
-    // Verify the update worked
     const verifyUpdate = await executeQuery(
       'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
       [facilityId]
     );
     
-    console.log(`resolveFacilityFailure: Verification - Found facility:`, verifyUpdate[0]);
-    
-    if (verifyUpdate[0] && verifyUpdate[0].status === 'operational') {
-      console.log(`resolveFacilityFailure: ✓ SUCCESS - Verified ${facility.name} is now operational`);
-    } else {
-      console.error(`resolveFacilityFailure: ✗ ERROR - Status verification failed! Expected 'operational', got '${verifyUpdate[0]?.status}'`);
-      // Try the update again
+    if (verifyUpdate[0] && verifyUpdate[0].status !== 'operational') {
       await executeWrite(
         `UPDATE infrastructure_assets 
          SET status = ? 
@@ -427,20 +317,8 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
         ['operational', facilityId]
       );
       await new Promise(resolve => setTimeout(resolve, 200));
-      
-      // Verify again
-      const verifyAgain = await executeQuery(
-        'SELECT status FROM infrastructure_assets WHERE id = ?',
-        [facilityId]
-      );
-      if (verifyAgain[0]?.status === 'operational') {
-        console.log(`resolveFacilityFailure: ✓ SUCCESS after retry - ${facility.name} is now operational`);
-      } else {
-        console.error(`resolveFacilityFailure: ✗ ERROR - Retry also failed! Status is still '${verifyAgain[0]?.status}'`);
-      }
     }
     
-    // Recalculate points with operational status
     const facilityUpdated = { ...facility, status: 'operational' };
     const newPoints = await calculateInterventionPoints(facilityUpdated);
     await executeWrite(
@@ -450,27 +328,18 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
       [newPoints, facilityId]
     );
     
-    console.log(`resolveFacilityFailure: Updated intervention points for ${facility.name} to ${newPoints}`);
+    const MAX_RISK_DISTANCE = 50000;
     
-    // Now check if any at-risk facilities should be resolved back to operational
-    // An at-risk facility should go back to operational if there are no failed facilities nearby
-    const MAX_RISK_DISTANCE = 50000; // 50km - same as in calculateCascadingFailures
-    
-    // Get all remaining failed facilities (excluding the one we just resolved)
     const allRemainingFailed = await executeQuery(
       'SELECT * FROM infrastructure_assets WHERE status = ?',
       ['failed']
     );
     
-    // Get all at-risk facilities
     const allAtRisk = await executeQuery(
       'SELECT * FROM infrastructure_assets WHERE status = ?',
       ['at_risk']
     );
     
-    console.log(`resolveFacilityFailure: Checking ${allAtRisk.length} at-risk facilities. ${allRemainingFailed.length} failed facilities remaining.`);
-    
-    // For each at-risk facility, check if there are any failed facilities nearby
     const facilitiesToResolve = [];
     
     for (const atRiskFacility of allAtRisk) {
@@ -478,10 +347,9 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
       const atRiskLng = atRiskFacility.location_lng || atRiskFacility.lng;
       
       if (!atRiskLat || !atRiskLng) {
-        continue; // Skip facilities without coordinates
+        continue;
       }
       
-      // Check if there are any failed facilities within risk distance
       let hasNearbyFailed = false;
       
       for (const failedFac of allRemainingFailed) {
@@ -501,26 +369,18 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
         
         if (distance <= MAX_RISK_DISTANCE) {
           hasNearbyFailed = true;
-          console.log(`resolveFacilityFailure: ${atRiskFacility.name} is still at risk - ${failedFac.name} is ${(distance / 1000).toFixed(1)}km away`);
           break;
         }
       }
       
-      // If no failed facilities nearby, this at-risk facility should be resolved
       if (!hasNearbyFailed) {
         facilitiesToResolve.push(atRiskFacility);
-        console.log(`resolveFacilityFailure: ${atRiskFacility.name} has no nearby failed facilities - will be resolved to operational`);
       }
     }
     
-    // Resolve all at-risk facilities that have no nearby failed facilities
     for (const facilityToResolve of facilitiesToResolve) {
-      console.log(`resolveFacilityFailure: Resolving ${facilityToResolve.name} from at_risk to operational`);
-      
-      // Remove from at-risk facilities set
       atRiskFacilities.delete(facilityToResolve.id);
       
-      // Update status to operational
       await executeWrite(
         `UPDATE infrastructure_assets 
          SET status = ? 
@@ -528,7 +388,6 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
         ['operational', facilityToResolve.id]
       );
       
-      // Recalculate points with operational status
       const resolvedFacilityUpdated = { ...facilityToResolve, status: 'operational' };
       const resolvedPoints = await calculateInterventionPoints(resolvedFacilityUpdated);
       await executeWrite(
@@ -537,12 +396,6 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
          WHERE id = ?`,
         [resolvedPoints, facilityToResolve.id]
       );
-      
-      console.log(`resolveFacilityFailure: ✓ Resolved ${facilityToResolve.name} to operational with ${resolvedPoints} points`);
-    }
-    
-    if (facilitiesToResolve.length > 0) {
-      console.log(`resolveFacilityFailure: Resolved ${facilitiesToResolve.length} at-risk facilities back to operational`);
     }
     
     return { ...facilityUpdated, intervention_points: newPoints };
@@ -552,9 +405,6 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
   }
 };
 
-/**
- * Clear all failures (for prototype reset on app restart)
- */
 export const clearAllFailures = async () => {
   try {
     // Clear in-memory storage

@@ -5,7 +5,7 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
-import { useLanguage } from '../contexts/LanguageContext';
+import { useLanguage } from '../contexts/language_context';
 
 /**
  * Language Toggle Component

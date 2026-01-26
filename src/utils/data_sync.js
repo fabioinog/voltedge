@@ -1,16 +1,7 @@
-/**
- * Data Sync Utility
- * Handles offline/online synchronization with public APIs
- * Caches data for offline use
- */
-
 import { executeQuery, executeWrite, getDatabase } from '../db/database';
-import { calculateInterventionPoints } from './interventionRanking';
+import { calculateInterventionPoints } from './intervention_ranking';
 import { fetchAllFacilities } from '../../api_simulation';
 
-/**
- * Check if device is online
- */
 export const isOnline = () => {
   if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
     return navigator.onLine;
@@ -18,15 +9,9 @@ export const isOnline = () => {
   return true; // Assume online if can't determine
 };
 
-/**
- * Fetch public data for facilities from API simulation
- * Uses the api_simulation module as a proof of concept
- * Future: Replace with actual API calls to real data sources
- */
 export const fetchPublicFacilityData = async (bounds) => {
   if (!isOnline()) {
-    console.log('Offline - using cached data');
-    return null; // Return null if offline, will use cached data
+    return null;
   }
 
   try {
@@ -98,11 +83,7 @@ export const syncFacilities = async () => {
     // Fetch and update public data from API simulation
     const publicData = await fetchPublicFacilityData();
     if (publicData && publicData.facilities && publicData.facilities.length > 0) {
-      console.log(`Syncing ${publicData.facilities.length} facilities from API simulation...`);
       await updateFacilitiesFromPublicData(publicData.facilities);
-      console.log('API simulation data synced successfully');
-    } else {
-      console.log('No API simulation data to sync');
     }
 
     // Update sync status
@@ -111,16 +92,11 @@ export const syncFacilities = async () => {
       ['infrastructure_assets']
     );
 
-    console.log('Sync completed');
   } catch (error) {
     console.error('Error syncing facilities:', error);
   }
 };
 
-/**
- * Update facilities from public data (API simulation)
- * Handles all fields from the API simulation including intervention metrics
- */
 const updateFacilitiesFromPublicData = async (facilities) => {
   const db = await getDatabase();
 
@@ -151,22 +127,15 @@ const updateFacilitiesFromPublicData = async (facilities) => {
       );
       const currentStatus = currentFacility[0]?.status || 'operational';
       
-      // CRITICAL: If facility is failed or at_risk, skip the update entirely - don't overwrite it
-      // at_risk status should persist as long as there's a failed facility nearby
       if (currentStatus === 'failed' || currentStatus === 'at_risk') {
-        console.log(`updateFacilitiesFromPublicData: Skipping update for ${currentFacility[0]?.name || 'facility'} (ID: ${existing[0].id}) - it is in ${currentStatus} state and must be preserved`);
-        continue; // Skip this facility entirely - don't update it at all
+        continue;
       }
       
-      // Never overwrite 'failed' status from API - only allow operational or at_risk
       let newStatus = facilityData.status || 'operational';
       if (newStatus === 'failed') {
-        // API should never set failed - convert to operational
         newStatus = 'operational';
       }
       
-      // Update existing facility with all API data
-      // BUT: Don't update status if it's already failed (we already checked, but double-check)
       const finalStatus = currentStatus === 'failed' ? 'failed' : newStatus;
       
       await executeWrite(
@@ -257,16 +226,8 @@ const updateFacilitiesFromPublicData = async (facilities) => {
   }
 };
 
-/**
- * Fix any facilities that have 'failed' or 'at_risk' status in the database
- * This ensures all facilities start as 'operational' by default
- */
 export const fixFacilityStatuses = async () => {
   try {
-    console.log('fixFacilityStatuses: Starting to fix facility statuses...');
-    
-    // First, get all facilities and filter for failed/at_risk status
-    // (web database doesn't support WHERE IN, so we query all and filter)
     const allFacilities = await executeQuery(
       `SELECT id, name, status FROM infrastructure_assets`
     );
@@ -275,21 +236,15 @@ export const fixFacilityStatuses = async () => {
       f.status === 'failed' || f.status === 'at_risk'
     );
     
-    if (failedFacilities.length > 0) {
-      console.log(`fixFacilityStatuses: Found ${failedFacilities.length} facilities with failed/at_risk status:`, 
-        failedFacilities.map(f => `${f.name} (${f.status})`).join(', '));
-    } else {
-      console.log('fixFacilityStatuses: No facilities need fixing - all are operational');
-      return; // Early return if nothing to fix
+    if (failedFacilities.length === 0) {
+      return;
     }
     
-    // Update each facility individually (web database requires WHERE id = ?)
-    const { calculateInterventionPoints } = await import('./interventionRanking');
+    const { calculateInterventionPoints } = await import('./intervention_ranking');
     let fixedCount = 0;
     
     for (const facility of failedFacilities) {
       try {
-        // Update status to operational
         await executeWrite(
           `UPDATE infrastructure_assets 
            SET status = ? 
@@ -297,14 +252,12 @@ export const fixFacilityStatuses = async () => {
           ['operational', facility.id]
         );
         
-        // Get the updated facility to recalculate points
         const updatedFacility = await executeQuery(
           'SELECT * FROM infrastructure_assets WHERE id = ?',
           [facility.id]
         );
         
         if (updatedFacility[0]) {
-          // Recalculate points with operational status
           const newPoints = await calculateInterventionPoints(updatedFacility[0]);
           await executeWrite(
             `UPDATE infrastructure_assets 
@@ -313,16 +266,12 @@ export const fixFacilityStatuses = async () => {
             [newPoints, facility.id]
           );
           fixedCount++;
-          console.log(`fixFacilityStatuses: Fixed ${facility.name} - reset to operational, points recalculated`);
         }
       } catch (facilityError) {
-        console.error(`fixFacilityStatuses: Error fixing ${facility.name}:`, facilityError);
+        console.error(`Error fixing ${facility.name}:`, facilityError);
       }
     }
     
-    console.log(`fixFacilityStatuses: Fixed ${fixedCount} out of ${failedFacilities.length} facilities`);
-    
-    // Verify the fix worked
     const allFacilitiesAfter = await executeQuery(
       `SELECT id, name, status FROM infrastructure_assets`
     );
@@ -347,44 +296,27 @@ export const fixFacilityStatuses = async () => {
  */
 export const initializeSampleData = async () => {
   try {
-    // NOTE: fixFacilityStatuses() is NOT called here anymore
-    // Failures should persist across page refreshes and only be reset via "Resolve Failure" button
-    
-    // Check if we can query the database
     let existing;
     try {
       existing = await executeQuery('SELECT COUNT(*) as count FROM infrastructure_assets');
     } catch (queryError) {
-      console.warn('Could not query database, may be using IndexedDB fallback:', queryError);
-      // For IndexedDB, the query might fail - try a different approach
       existing = [{ count: 0 }];
     }
     
-    // If we have data but less than 30 facilities, clear and reinitialize
     const count = existing && existing[0]?.count ? existing[0].count : 0;
     if (count > 0 && count < 30) {
-      console.log(`Found ${count} facilities, clearing to reinitialize with 30 facilities...`);
       try {
-        // Clear all existing facilities
         await executeWrite('DELETE FROM infrastructure_assets');
-        console.log('Cleared existing facilities');
-        // Also clear related data
         try {
           await executeWrite('DELETE FROM dependencies');
           await executeWrite('DELETE FROM failure_events');
           await executeWrite('DELETE FROM interventions');
           await executeWrite('DELETE FROM user_reports');
         } catch (clearError) {
-          console.warn('Could not clear related tables:', clearError);
         }
       } catch (deleteError) {
-        console.warn('Could not clear existing facilities:', deleteError);
-        // Try to continue anyway - might be able to insert
       }
     } else if (count >= 30) {
-      console.log(`Sample data already exists with ${count} facilities`);
-      // NOTE: fixFacilityStatuses() is NOT called here anymore
-      // Failures should persist across page refreshes
       return;
     }
 
@@ -908,10 +840,8 @@ export const initializeSampleData = async () => {
         }
       }
     }
-
-    console.log(`Sample data initialized with ${sampleFacilities.length} facilities`);
   } catch (error) {
     console.error('Error initializing sample data:', error);
-    throw error; // Re-throw to let caller know initialization failed
+    throw error;
   }
 };

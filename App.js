@@ -1,54 +1,70 @@
-  /**
- * VoltEdge - Main Application Entry Point
- * Field-ready decision tool for water and electricity disruption response
- */
-
 import React, { useEffect, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { initDatabase } from './src/db/database';
-import HomeScreen from './src/screens/HomeScreen';
-import MapScreen from './src/screens/MapScreen';
+import HomeScreen from './src/screens/home_screen';
+import MapScreen from './src/screens/map_screen';
 
 const Stack = createNativeStackNavigator();
 
-/**
- * Main App Component
- * Initializes database and sets up navigation
- */
 const App = () => {
   const [dbInitialized, setDbInitialized] = useState(false);
   const [initError, setInitError] = useState(null);
 
   useEffect(() => {
+    if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      document.title = 'VoltEdge';
+      
+      // Monitor and keep title as "VoltEdge" even if React Navigation changes it
+      const observer = new MutationObserver(() => {
+        if (document.title !== 'VoltEdge') {
+          document.title = 'VoltEdge';
+        }
+      });
+      
+      observer.observe(document.querySelector('title') || document.head, {
+        childList: true,
+        subtree: true,
+        characterData: true,
+      });
+      
+      // Also set it periodically as a fallback
+      const interval = setInterval(() => {
+        if (document.title !== 'VoltEdge') {
+          document.title = 'VoltEdge';
+        }
+      }, 100);
+      
+      return () => {
+        observer.disconnect();
+        clearInterval(interval);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
     const initializeApp = async () => {
       try {
-        console.log('App: Initializing database...');
         await initDatabase();
-        console.log('App: Database initialized successfully');
         setDbInitialized(true);
       } catch (error) {
-        console.error('App: Database initialization error:', error);
-        // On web, database errors are expected - continue anyway
+        console.error('Database initialization error:', error);
         if (Platform.OS === 'web') {
-          console.log('App: Web platform - continuing despite database error');
           setDbInitialized(true);
         } else {
           setInitError(error.message);
-          setDbInitialized(true); // Still show app, but with error state
+          setDbInitialized(true);
         }
       }
     };
 
-    // Set timeout to ensure app doesn't hang forever - very short for web
     const timeout = setTimeout(() => {
       if (!dbInitialized) {
-        console.warn('App: Initialization timeout, showing app anyway');
         setDbInitialized(true);
       }
-    }, 1000); // 1 second timeout - show app quickly
+    }, 1000);
 
     initializeApp();
 
@@ -65,7 +81,6 @@ const App = () => {
     );
   }
 
-  // On web, ignore database errors and continue
   if (initError && Platform.OS !== 'web') {
     const isWebDatabaseError = initError.includes('constructor') || initError.includes('NativeDatabase');
     
@@ -83,9 +98,6 @@ const App = () => {
               2. Clear browser cache{'\n'}
               3. Restart server: npx expo start --web --clear
             </Text>
-            <Text style={styles.errorHint}>
-              See WEB_DATABASE_FIX.md for detailed instructions.
-            </Text>
           </>
         ) : (
           <Text style={styles.errorHint}>
@@ -95,9 +107,6 @@ const App = () => {
       </View>
     );
   }
-
-  // Always render something - never return null or undefined
-  console.log('App: Rendering main app, dbInitialized:', dbInitialized, 'initError:', initError);
   
   return (
     <NavigationContainer>
@@ -125,8 +134,8 @@ const App = () => {
           name="Map"
           component={MapScreen}
           options={{
-            title: 'Sudan Map',
-            headerShown: false, // Hide header for full-screen map
+            title: 'VoltEdge',
+            headerShown: false,
           }}
         />
       </Stack.Navigator>
@@ -140,7 +149,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     backgroundColor: '#ffffff',
-    minHeight: '100vh', // Ensure full viewport height on web
+    minHeight: '100vh',
   },
   loadingText: {
     marginTop: 16,
@@ -159,7 +168,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: '#ffffff',
     padding: 24,
-    minHeight: '100vh', // Ensure full viewport height on web
+    minHeight: '100vh',
   },
   errorTitle: {
     fontSize: 20,

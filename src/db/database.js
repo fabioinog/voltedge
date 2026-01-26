@@ -1,21 +1,12 @@
-/**
- * Database layer for VoltEdge
- * Provides SQLite database abstraction with offline-first support
- * Compatible with web and mobile platforms via expo-sqlite
- */
-
 import { Platform } from 'react-native';
-import { initWebDatabase, executeQueryWeb, executeWriteWeb } from './webDatabase';
+import { initWebDatabase, executeQueryWeb, executeWriteWeb } from './web_database';
 
-// Import expo-sqlite with web compatibility handling
 let SQLite = null;
 let db = null;
 let useWebFallback = false;
 
 try {
-  // Try standard import
   SQLite = require('expo-sqlite');
-  // Handle both default and named exports
   if (SQLite.default) {
     SQLite = SQLite.default;
   }
@@ -23,29 +14,21 @@ try {
   console.warn('Error importing expo-sqlite:', error);
 }
 
-// On web, try to use IndexedDB fallback if expo-sqlite fails
 if (Platform.OS === 'web') {
   useWebFallback = true;
 }
 
-/**
- * Initialize the database connection
- * @returns {Promise<SQLite.SQLiteDatabase>} Database instance
- */
 export const initDatabase = async () => {
   try {
     if (db && !useWebFallback) {
       return db;
     }
 
-    // On web, always use IndexedDB fallback (expo-sqlite has issues)
     if (Platform.OS === 'web') {
-      console.log('Web platform detected - using IndexedDB fallback');
       try {
         await initWebDatabase();
         await createSchemaWeb();
         useWebFallback = true;
-        console.log('IndexedDB database initialized successfully');
         return { _isWebFallback: true };
       } catch (indexedDBError) {
         console.error('IndexedDB initialization failed:', indexedDBError);

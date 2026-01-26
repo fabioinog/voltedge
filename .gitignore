@@ -77,3 +77,7 @@ coverage/
 *.log
 *.tmp
 *.temp
+
+# Cursor rules
+.cursor/
+.cursorrules

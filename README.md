@@ -99,10 +99,3 @@ The app uses SQLite via `expo-sqlite` for offline-first data storage. On web, it
 
 MIT License - See LICENSE file for details
 
-## Credits
-
-Built with Expo React Native and open-source libraries including Leaflet for mapping functionality.
-
-## Credits
-
-Built with Expo React Native and open-source libraries including Leaflet for mapping functionality.

@@ -4,12 +4,8 @@ VoltEdge is a field-ready decision tool that helps responders map water and elec
 
 ## Problem Statement
 
-When water and power systems fail together, responders face a brutal reality:
-- Outages spread through dependencies (not distance)
-- Fixing the wrong asset wastes time
-- Hospitals and shelters collapse quietly (because it's not always visible)
+In conflict-affected cities, electricity and water systems are highly interdependent, making infrastructure failures especially severe. Power disruptions can quickly halt water pumps and treatment facilities, cause pressure failures, and cut access to safe water within hours, often without warning. With limited time, fuel, and repair capacity, responders tend to prioritize visible damage rather than actions that would restore water services most effectively. As a result, displaced families and critical facilities such as hospitals and shelters face prolonged water shortages, increased reliance on unsafe sources, and heightened public health risks. Evidence from Sudan shows that persistent power outages disrupt drinking-water supply due to reliance on electric pumps (ACAPS, 2023), while 38% of the population requires WASH assistance due to damaged water and electricity infrastructure (iMMAP, 2024). The International Committee of the Red Cross (2025) further warns that attacks on hospitals and water and power infrastructure can leave civilians without essential services.
 
-VoltEdge turns infrastructure damage into a prioritized response plan.
 
 ## Key Capabilities
 
@@ -18,9 +14,6 @@ VoltEdge turns infrastructure damage into a prioritized response plan.
 - Intervention Ranking Engine: Point-based system prioritizing facilities by actual impact
 - Minimum Survival Water Mode: Track critical water supply thresholds
 - Facility-Collapse Timers: Countdown timers for facility collapse scenarios
-- Offline Functionality: Core features work without connectivity, with sync when online
-- User Report Validation: Algorithm prevents fake reports and validates user contributions
-- Simulated GPS Navigation: Test movement and navigation without device GPS
 
 ## Installation
 
@@ -67,45 +60,7 @@ The app will open at `http://localhost:8081` (or the next available port).
 
 ### Android Development
 
-#### Using Expo Go (Easiest)
-
-1. Install [Expo Go](https://play.google.com/store/apps/details?id=host.exp.exponent) on your Android device
-2. Run: `npx expo start`
-3. Scan the QR code with Expo Go app
-
-#### Android Emulator
-
-1. Start Android Studio and launch an emulator
-2. Run: `npx expo start --android`
-
-#### Physical Device (USB Debugging)
-
-1. Enable USB debugging on your Android device
-2. Connect device via USB
-3. Run: `npx expo start --android`
-
-### Building APK (Android)
-
-#### EAS Build (Recommended - Cloud Build)
-
-```bash
-npm install -g eas-cli
-eas login
-eas build:configure
-eas build -p android --profile preview
-```
-
-The APK will be available for download from the Expo dashboard.
-
-#### Local Build (Requires Android Studio)
-
-```bash
-npx expo prebuild -p android
-cd android
-./gradlew assembleDebug
-```
-
-APK location: `android/app/build/outputs/apk/debug/app-debug.apk`
+#### Work in Progress
 
 ## Technology Stack
 
@@ -115,22 +70,6 @@ APK location: `android/app/build/outputs/apk/debug/app-debug.apk`
 - expo-sqlite ~14.0.6: SQLite database for offline storage
 - Leaflet ^1.9.4: Interactive maps
 - React-Leaflet ^4.2.1: React components for Leaflet
-
-## Project Structure
-
-```
-voltedge/
-├── src/
-│   ├── components/      # Reusable UI components
-│   ├── screens/         # Screen components
-│   ├── utils/           # Utility functions
-│   └── db/              # Database layer
-├── api_simulation/      # Mock API for facility data
-├── assets/              # Images, fonts, etc.
-├── App.js               # Main app entry point
-├── app.json             # Expo configuration
-└── package.json         # Dependencies
-```
 
 ## Database
 
@@ -155,13 +94,6 @@ The app uses SQLite via `expo-sqlite` for offline-first data storage. On web, it
 - Use StyleSheet for styling
 - All core features must work offline
 
-## Testing
-
-```bash
-npm test        # Run tests
-npm run lint    # Lint code
-npm run format  # Format code
-```
 
 ## License
 

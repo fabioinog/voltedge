@@ -1,13 +1,15 @@
 /**
  * Failure Suggestions Modal
- * Shows suggestions for what to do when a facility fails
+ * Shows actions the user can take for a failed facility. Clicking an action
+ * closes the modal and notifies the parent (onActionStarted); a bottom pop-up
+ * in the parent shows progress and result (60% no effect, 40% facility resolved).
  */
 
 import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, ScrollView } from 'react-native';
 import { ACCENT_BLUE, transitionStyle } from '../theme';
 
-const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) => {
+const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose, onActionStarted }) => {
   if (!visible || !facility || !suggestions) {
     return null;
   }
@@ -23,6 +25,13 @@ const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) =>
     return icons[type] || '📍';
   };
 
+  const handleActionPress = (suggestion) => {
+    if (onActionStarted && facility) {
+      onActionStarted(facility, suggestion);
+      onClose();
+    }
+  };
+
   return (
     <Modal
       visible={visible}
@@ -35,7 +44,7 @@ const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) =>
           <View style={styles.modalHeader}>
             <Text style={styles.modalIcon}>{getTypeIcon(facility.type)}</Text>
             <View style={styles.modalHeaderText}>
-              <Text style={styles.modalTitle}>Recommended Actions</Text>
+              <Text style={styles.modalTitle}>Actions</Text>
               <Text style={styles.modalSubtitle}>{facility.name}</Text>
             </View>
             <Pressable
@@ -45,13 +54,21 @@ const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) =>
               <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
-          
+
           <ScrollView style={styles.suggestionsList}>
             {suggestions.map((suggestion, index) => (
-              <View key={index} style={styles.suggestionItem}>
-                <Text style={styles.suggestionNumber}>{index + 1}</Text>
-                <Text style={styles.suggestionText}>{suggestion}</Text>
-              </View>
+              <Pressable
+                key={index}
+                style={({ pressed }) => [
+                  styles.actionItem,
+                  transitionStyle,
+                  { opacity: pressed ? 0.9 : 1 },
+                ]}
+                onPress={() => handleActionPress(suggestion)}
+              >
+                <Text style={styles.actionNumber}>{index + 1}</Text>
+                <Text style={styles.actionText}>{suggestion}</Text>
+              </Pressable>
             ))}
           </ScrollView>
 
@@ -123,24 +140,26 @@ const styles = StyleSheet.create({
   },
   suggestionsList: {
     maxHeight: 400,
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  suggestionItem: {
+  actionItem: {
     flexDirection: 'row',
     padding: 15,
     marginBottom: 10,
     backgroundColor: '#f9f9f9',
     borderRadius: 5,
     alignItems: 'flex-start',
+    borderWidth: 1,
+    borderColor: 'transparent',
   },
-  suggestionNumber: {
+  actionNumber: {
     fontSize: 16,
     fontWeight: 'bold',
     color: ACCENT_BLUE,
     marginRight: 12,
     minWidth: 24,
   },
-  suggestionText: {
+  actionText: {
     flex: 1,
     fontSize: 14,
     color: '#333333',

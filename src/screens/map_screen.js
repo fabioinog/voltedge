@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { ACCENT_BLUE, ACCENT_BLUE_LIGHT, transitionStyle } from '../theme';
 import { executeQuery, executeWrite, initDatabase } from '../db/database';
@@ -27,6 +27,8 @@ import GuideModal from '../components/guide_modal';
 // Sudan center coordinates
 const SUDAN_CENTER = [15.5, 30.0];
 const SUDAN_ZOOM = 6;
+
+const ACTION_TOAST_DURATION_MS = 3500;
 
 const MapScreen = () => {
   const [facilities, setFacilities] = useState([]);
@@ -59,6 +61,9 @@ const MapScreen = () => {
   const [showResolveFailureModal, setShowResolveFailureModal] = useState(false);
   const [isSimulatingFailure, setIsSimulatingFailure] = useState(false); // Prevent sync during failure simulation
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [actionToasts, setActionToasts] = useState([]); // [{ id, facility, facilityName, actionText, status }]
+  const actionToastTimeoutsRef = useRef({}); // id -> timeoutId
+  const nextToastIdRef = useRef(0);
 
   useEffect(() => {
     let mounted = true;
@@ -492,9 +497,82 @@ const MapScreen = () => {
       alert("You're offline. Go online to send alerts to the team.");
       return;
     }
+    alert(`Nearby Team for ${facility.name} has been alerted.`);
+  };
+
+  const handleShowActions = (facility) => {
+    if (!facility) return;
     setCurrentFailure(facility);
     setShowFailureSuggestions(true);
   };
+
+  const handleApplyAction = async (facility) => {
+    try {
+      setShowFailureSuggestions(false);
+      setCurrentFailure(null);
+      setIsSimulatingFailure(true);
+      await resolveFacilityFailure(facility.id, facilities);
+      if (!isOnline) {
+        await loadFacilities(false);
+        setIsSimulatingFailure(false);
+        return;
+      }
+      await copyOnlineToOffline();
+      await loadFacilities(false);
+      setIsSimulatingFailure(false);
+    } catch (error) {
+      console.error('Error applying action / resolving facility:', error);
+      setIsSimulatingFailure(false);
+      alert('Error resolving facility failure. Please try again.');
+    }
+  };
+
+  const handleActionStarted = useCallback((facility, actionText) => {
+    setShowFailureSuggestions(false);
+    setCurrentFailure(null);
+    const id = `toast-${nextToastIdRef.current++}`;
+    const facilityName = facility?.name ?? '';
+    const newToast = {
+      id,
+      facility,
+      facilityName,
+      actionText: actionText ?? '',
+      status: 'in_progress',
+    };
+    setActionToasts((prev) => [...prev, newToast]);
+    const timeoutId = setTimeout(() => {
+      const resolved = Math.random() < 0.4;
+      setActionToasts((prev) =>
+        prev.map((t) =>
+          t.id === id
+            ? { ...t, status: resolved ? 'complete_resolved' : 'complete_failure' }
+            : t
+        )
+      );
+      if (resolved && facility) {
+        handleApplyAction(facility);
+      }
+      if (actionToastTimeoutsRef.current[id] !== undefined) {
+        delete actionToastTimeoutsRef.current[id];
+      }
+    }, ACTION_TOAST_DURATION_MS);
+    actionToastTimeoutsRef.current[id] = timeoutId;
+  }, []);
+
+  const handleDismissActionToast = useCallback((id) => {
+    if (actionToastTimeoutsRef.current[id] !== undefined) {
+      clearTimeout(actionToastTimeoutsRef.current[id]);
+      delete actionToastTimeoutsRef.current[id];
+    }
+    setActionToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      Object.values(actionToastTimeoutsRef.current).forEach(clearTimeout);
+      actionToastTimeoutsRef.current = {};
+    };
+  }, []);
 
   const handleResolveFailure = async (facility) => {
     try {
@@ -795,10 +873,11 @@ const MapScreen = () => {
           setSelectedFacility(facility);
         }}
         onSendAlert={handleSendAlert}
+        onShowActions={handleShowActions}
         isOnline={isOnline}
       />
 
-      {/* Failure Suggestions Modal */}
+      {/* Actions Modal (actions user can take; clicking one closes modal and shows bottom pop-up) */}
       {currentFailure && (
         <FailureSuggestionsModal
           visible={showFailureSuggestions}
@@ -808,7 +887,51 @@ const MapScreen = () => {
             setShowFailureSuggestions(false);
             setCurrentFailure(null);
           }}
+          onActionStarted={handleActionStarted}
         />
+      )}
+
+      {/* Action status pop-ups at bottom (multiple allowed; stacked sideways) */}
+      {actionToasts.length > 0 && (
+        <View style={styles.actionToastContainer}>
+          {actionToasts.map((toast, idx) => (
+            <View
+              key={toast.id}
+              style={[
+                styles.actionToast,
+                idx > 0 && styles.actionToastStacked,
+              ]}
+            >
+              <View style={styles.actionToastContent}>
+                <Text style={styles.actionToastTitle}>Action status</Text>
+                <Text style={styles.actionToastLabel}>Facility</Text>
+                <Text style={styles.actionToastFacilityName}>{toast.facilityName}</Text>
+                <Text style={styles.actionToastLabel}>Action</Text>
+                <Text style={styles.actionToastActionText} numberOfLines={2}>{toast.actionText}</Text>
+                <View style={styles.actionToastStatusRow}>
+                  {toast.status === 'in_progress' && (
+                    <>
+                      <ActivityIndicator size="small" color={ACCENT_BLUE} />
+                      <Text style={[styles.actionToastStatusText, styles.actionToastTextWithSpinner]}>Action in progress...</Text>
+                    </>
+                  )}
+                  {toast.status === 'complete_failure' && (
+                    <Text style={[styles.actionToastStatusText, styles.actionToastStatusFailure]}>Complete. Facility still in failure.</Text>
+                  )}
+                  {toast.status === 'complete_resolved' && (
+                    <Text style={[styles.actionToastStatusText, styles.actionToastStatusResolved]}>Facility resolved.</Text>
+                  )}
+                </View>
+                <Pressable
+                  style={({ pressed }) => [styles.actionToastClose, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+                  onPress={() => handleDismissActionToast(toast.id)}
+                >
+                  <Text style={styles.actionToastCloseText}>Dismiss</Text>
+                </Pressable>
+              </View>
+            </View>
+          ))}
+        </View>
       )}
 
       {/* Resolve Failure Modal */}
@@ -1199,6 +1322,99 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666666',
     textAlign: 'center',
+  },
+  actionToastContainer: {
+    position: 'absolute',
+    bottom: 24,
+    left: 16,
+    right: 16,
+    zIndex: 1100,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    alignItems: 'flex-end',
+  },
+  actionToast: {
+    alignItems: 'center',
+  },
+  actionToastStacked: {
+    marginLeft: 8,
+  },
+  actionToastContent: {
+    backgroundColor: '#ffffff',
+    padding: 15,
+    borderRadius: 8,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 5,
+    minWidth: 260,
+    maxWidth: 400,
+  },
+  actionToastTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#333333',
+    marginBottom: 10,
+    borderBottomWidth: 2,
+    borderBottomColor: ACCENT_BLUE,
+    paddingBottom: 8,
+    textAlign: 'left',
+  },
+  actionToastLabel: {
+    fontSize: 12,
+    color: '#666666',
+    marginTop: 8,
+    marginBottom: 2,
+    textAlign: 'left',
+  },
+  actionToastFacilityName: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#333333',
+    textAlign: 'left',
+  },
+  actionToastActionText: {
+    fontSize: 14,
+    color: '#333333',
+    lineHeight: 20,
+    textAlign: 'left',
+    marginBottom: 4,
+  },
+  actionToastStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 10,
+    marginBottom: 12,
+  },
+  actionToastStatusText: {
+    fontSize: 14,
+    textAlign: 'left',
+  },
+  actionToastTextWithSpinner: {
+    marginLeft: 8,
+    color: '#666666',
+  },
+  actionToastStatusFailure: {
+    color: '#b71c1c',
+    fontWeight: '600',
+  },
+  actionToastStatusResolved: {
+    color: '#2e7d32',
+    fontWeight: '600',
+  },
+  actionToastClose: {
+    backgroundColor: ACCENT_BLUE,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  actionToastCloseText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
   guideButton: {
     position: 'absolute',

@@ -112,7 +112,7 @@ const GuideModal = ({ visible, onClose }) => {
               <View style={styles.bulletPoint}>
                 <Text style={styles.bullet}>•</Text>
                 <Text style={styles.bulletText}>
-                  <Text style={styles.bold}>Alert Team:</Text> For each failed facility, you can send alerts to nearby teams using the "Alert Team" button in the failure display panel.
+                  <Text style={styles.bold}>Alert Team:</Text> Use the "Alert Team" button in the failure display panel to notify nearby teams for a failed facility. Use the "Actions" button to see suggested actions and mark the facility as resolved once you've applied an action.
                 </Text>
               </View>
             </View>

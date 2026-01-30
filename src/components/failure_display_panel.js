@@ -7,8 +7,9 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
 
-const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert, isOnline = true }) => {
+const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert, onShowActions, isOnline = true }) => {
   const [hoveredAlertId, setHoveredAlertId] = useState(null);
+  const [hoveredActionsId, setHoveredActionsId] = useState(null);
   const getTypeColor = (type) => {
     switch (type) {
       case 'water':
@@ -74,19 +75,34 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                   <Text style={styles.failedBadge}>FAILED</Text>
                 </Pressable>
                 {isOnline ? (
-                  <Pressable
-                    style={({ pressed }) => [
-                      styles.alertButton,
-                      transitionStyle,
-                      hoveredAlertId === facility.id && Platform.OS === 'web' && styles.alertButtonHover,
-                      { opacity: pressed ? 0.9 : 1 },
-                    ]}
-                    onPress={() => onSendAlert && onSendAlert(facility)}
-                    onMouseEnter={() => Platform.OS === 'web' && setHoveredAlertId(facility.id)}
-                    onMouseLeave={() => Platform.OS === 'web' && setHoveredAlertId(null)}
-                  >
-                    <Text style={styles.alertButtonText}>Alert Team</Text>
-                  </Pressable>
+                  <View style={styles.failedFacilityButtons}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.alertButton,
+                        transitionStyle,
+                        hoveredAlertId === facility.id && Platform.OS === 'web' && styles.alertButtonHover,
+                        { opacity: pressed ? 0.9 : 1 },
+                      ]}
+                      onPress={() => onSendAlert && onSendAlert(facility)}
+                      onMouseEnter={() => Platform.OS === 'web' && setHoveredAlertId(facility.id)}
+                      onMouseLeave={() => Platform.OS === 'web' && setHoveredAlertId(null)}
+                    >
+                      <Text style={styles.alertButtonText}>Alert Team</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.actionsButton,
+                        transitionStyle,
+                        hoveredActionsId === facility.id && Platform.OS === 'web' && styles.actionsButtonHover,
+                        { opacity: pressed ? 0.9 : 1 },
+                      ]}
+                      onPress={() => onShowActions && onShowActions(facility)}
+                      onMouseEnter={() => Platform.OS === 'web' && setHoveredActionsId(facility.id)}
+                      onMouseLeave={() => Platform.OS === 'web' && setHoveredActionsId(null)}
+                    >
+                      <Text style={styles.actionsButtonText}>Actions</Text>
+                    </Pressable>
+                  </View>
                 ) : (
                   <View style={styles.offlineAlertMessage}>
                     <Text style={styles.offlineAlertText}>You're offline. Go online to send alerts.</Text>
@@ -231,18 +247,39 @@ const styles = StyleSheet.create({
     paddingHorizontal: 6,
     borderRadius: 3,
   },
+  failedFacilityButtons: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+  },
   alertButton: {
+    flex: 1,
     backgroundColor: ACCENT_BLUE,
     paddingVertical: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
-    borderTopWidth: 1,
-    borderTopColor: '#e0e0e0',
   },
   alertButtonHover: {
     backgroundColor: ACCENT_BLUE_HOVER,
   },
   alertButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  actionsButton: {
+    flex: 1,
+    backgroundColor: '#2e7d32',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderLeftWidth: 1,
+    borderLeftColor: '#e0e0e0',
+  },
+  actionsButtonHover: {
+    backgroundColor: '#1b5e20',
+  },
+  actionsButtonText: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '600',

@@ -85,3 +85,6 @@ backend/node_modules/
 .cursor/
 .cursorrules
 .cursor/rules
+
+# Points system documentation (internal reference)
+POINTS_SYSTEM_README.md

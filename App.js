@@ -4,8 +4,10 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
 import { initDatabase } from './src/db/database';
+import { getStoredUserRole } from './src/utils/auth_storage';
 import HomeScreen from './src/screens/home_screen';
 import MapScreen from './src/screens/map_screen';
+import SignInScreen from './src/screens/sign_in_screen';
 import ErrorBoundary from './src/components/error_boundary';
 
 const Stack = createNativeStackNavigator();
@@ -13,6 +15,8 @@ const Stack = createNativeStackNavigator();
 const App = () => {
   const [dbInitialized, setDbInitialized] = useState(false);
   const [initError, setInitError] = useState(null);
+  const [storedRole, setStoredRole] = useState(null);
+  const [authChecked, setAuthChecked] = useState(false);
 
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
@@ -72,12 +76,29 @@ const App = () => {
     return () => clearTimeout(timeout);
   }, []);
 
+  useEffect(() => {
+    getStoredUserRole().then((role) => {
+      setStoredRole(role);
+      setAuthChecked(true);
+    });
+  }, []);
+
   if (!dbInitialized) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#0066cc" />
         <Text style={styles.loadingText}>Initializing VoltEdge...</Text>
         <Text style={styles.loadingSubtext}>Setting up database...</Text>
+      </View>
+    );
+  }
+
+  if (!authChecked) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0066cc" />
+        <Text style={styles.loadingText}>Initializing VoltEdge...</Text>
+        <Text style={styles.loadingSubtext}>Checking sign-in...</Text>
       </View>
     );
   }
@@ -125,7 +146,7 @@ const App = () => {
       <NavigationContainer>
         <StatusBar style="auto" />
         <Stack.Navigator
-        initialRouteName="Map"
+        initialRouteName={storedRole ? 'Map' : 'SignIn'}
         screenOptions={{
           headerStyle: {
             backgroundColor: '#0066cc',
@@ -137,6 +158,14 @@ const App = () => {
         }}
       >
         <Stack.Screen
+          name="SignIn"
+          component={SignInScreen}
+          options={{
+            title: 'VoltEdge',
+            headerShown: true,
+          }}
+        />
+        <Stack.Screen
           name="Home"
           component={HomeScreen}
           options={{
@@ -146,6 +175,7 @@ const App = () => {
         <Stack.Screen
           name="Map"
           component={MapScreen}
+          initialParams={{ userRole: storedRole || 'control_center' }}
           options={{
             title: 'VoltEdge',
             headerShown: false,

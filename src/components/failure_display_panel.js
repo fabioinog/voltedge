@@ -7,9 +7,11 @@ import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
 
-const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert, onShowActions, isOnline = true }) => {
+const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert, onShowActions, onIssueResolved, userRole = 'control_center', isOnline = true }) => {
   const [hoveredAlertId, setHoveredAlertId] = useState(null);
   const [hoveredActionsId, setHoveredActionsId] = useState(null);
+  const [hoveredIssueResolvedId, setHoveredIssueResolvedId] = useState(null);
+  const isKhartoumTeam = userRole === 'khartoum_response_team';
   const getTypeColor = (type) => {
     switch (type) {
       case 'water':
@@ -74,7 +76,23 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                   </View>
                   <Text style={styles.failedBadge}>FAILED</Text>
                 </Pressable>
-                {isOnline ? (
+                {isKhartoumTeam ? (
+                  <View style={styles.failedFacilityButtons}>
+                    <Pressable
+                      style={({ pressed }) => [
+                        styles.issueResolvedButton,
+                        transitionStyle,
+                        hoveredIssueResolvedId === facility.id && Platform.OS === 'web' && styles.issueResolvedButtonHover,
+                        { opacity: pressed ? 0.9 : 1 },
+                      ]}
+                      onPress={() => onIssueResolved && onIssueResolved(facility)}
+                      onMouseEnter={() => Platform.OS === 'web' && setHoveredIssueResolvedId(facility.id)}
+                      onMouseLeave={() => Platform.OS === 'web' && setHoveredIssueResolvedId(null)}
+                    >
+                      <Text style={styles.issueResolvedButtonText}>Issue resolved</Text>
+                    </Pressable>
+                  </View>
+                ) : isOnline ? (
                   <View style={styles.failedFacilityButtons}>
                     <Pressable
                       style={({ pressed }) => [
@@ -280,6 +298,21 @@ const styles = StyleSheet.create({
     backgroundColor: '#1b5e20',
   },
   actionsButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  issueResolvedButton: {
+    flex: 1,
+    backgroundColor: '#2e7d32',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+  },
+  issueResolvedButtonHover: {
+    backgroundColor: '#1b5e20',
+  },
+  issueResolvedButtonText: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '600',

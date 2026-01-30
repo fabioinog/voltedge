@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
 import { ACCENT_BLUE, ACCENT_BLUE_LIGHT, transitionStyle } from '../theme';
 import { executeQuery, executeWrite, initDatabase } from '../db/database';
 import MapComponent from '../components/map_component';
@@ -17,6 +18,8 @@ import { findNearestFacility, formatDistance } from '../utils/distance';
 import { generateRoute, getNextInstruction } from '../utils/routing';
 import { establishAllConnections, getFacilityConnections } from '../utils/facility_connections';
 import { simulateFacilityFailure, getFailedFacilities, getAtRiskFacilities, getFailureSuggestions, loadFailuresFromDatabase, resolveFacilityFailure } from '../utils/failure_simulation';
+import { isFacilityInKhartoum } from '../utils/khartoum_region';
+import { clearStoredUserRole } from '../utils/auth_storage';
 import FailureSimulationButton from '../components/failure_simulation_button';
 import FacilityFailureModal from '../components/facility_failure_modal';
 import FailureDisplayPanel from '../components/failure_display_panel';
@@ -30,7 +33,27 @@ const SUDAN_ZOOM = 6;
 
 const ACTION_TOAST_DURATION_MS = 3500;
 
+const KHARTOUM_COMMAND_INTERVAL_MS = 5000;
+
+const ROLE_LABELS = {
+  control_center: 'Control Center',
+  khartoum_response_team: 'Khartoum Response Team',
+};
+
 const MapScreen = () => {
+  const route = useRoute();
+  const navigation = useNavigation();
+  const userRole = route.params?.userRole ?? 'control_center';
+  const isKhartoumTeam = userRole === 'khartoum_response_team';
+
+  const handleSignOut = async () => {
+    await clearStoredUserRole();
+    navigation.reset({
+      index: 0,
+      routes: [{ name: 'SignIn' }],
+    });
+  };
+
   const [facilities, setFacilities] = useState([]);
   const [selectedFacility, setSelectedFacility] = useState(null);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -64,6 +87,8 @@ const MapScreen = () => {
   const [actionToasts, setActionToasts] = useState([]); // [{ id, facility, facilityName, actionText, status }]
   const actionToastTimeoutsRef = useRef({}); // id -> timeoutId
   const nextToastIdRef = useRef(0);
+
+  // Khartoum Response Team: assigned-action toasts use same actionToasts array and bottom stack as Control Center
 
   useEffect(() => {
     let mounted = true;
@@ -371,6 +396,18 @@ const MapScreen = () => {
     [facilities]
   );
 
+  // Khartoum Response Team: only show failures in Khartoum in Failure Status panel
+  const failedInKhartoum = useMemo(
+    () => (Array.isArray(failedFacilitiesList) ? failedFacilitiesList.filter(isFacilityInKhartoum) : []),
+    [failedFacilitiesList]
+  );
+  const atRiskInKhartoum = useMemo(
+    () => (Array.isArray(atRiskFacilitiesList) ? atRiskFacilitiesList.filter(isFacilityInKhartoum) : []),
+    [atRiskFacilitiesList]
+  );
+  const failedForPanel = isKhartoumTeam ? failedInKhartoum : failedFacilitiesList;
+  const atRiskForPanel = isKhartoumTeam ? atRiskInKhartoum : atRiskFacilitiesList;
+
   const handleReportProblem = () => {
     setShowReportModal(true);
   };
@@ -567,6 +604,32 @@ const MapScreen = () => {
     setActionToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
+  // Khartoum Response Team: every 5s add one assigned-action toast to bottom stack (same as Control Center Action Status)
+  const failedInKhartoumRef = useRef([]);
+  useEffect(() => {
+    failedInKhartoumRef.current = failedInKhartoum;
+  }, [failedInKhartoum]);
+  useEffect(() => {
+    if (!isKhartoumTeam) return;
+    const id = setInterval(() => {
+      const list = failedInKhartoumRef.current;
+      if (!list || list.length === 0) return;
+      const facility = list[Math.floor(Math.random() * list.length)];
+      const suggestions = getFailureSuggestions(facility);
+      const actionText = suggestions.length ? suggestions[Math.floor(Math.random() * suggestions.length)] : 'Assess and report status';
+      const toastId = `khartoum-${nextToastIdRef.current++}`;
+      const newToast = {
+        id: toastId,
+        facility,
+        facilityName: facility.name,
+        actionText,
+        status: 'khartoum_pending',
+      };
+      setActionToasts((prev) => [...prev, newToast]);
+    }, KHARTOUM_COMMAND_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, [isKhartoumTeam]);
+
   useEffect(() => {
     return () => {
       Object.values(actionToastTimeoutsRef.current).forEach(clearTimeout);
@@ -595,6 +658,31 @@ const MapScreen = () => {
       setIsSimulatingFailure(false);
       alert('Error resolving facility failure. Please try again.');
     }
+  };
+
+  const handleKhartoumToastResolved = async (toast) => {
+    const facility = toast.facility;
+    handleDismissActionToast(toast.id);
+    if (facility) {
+      try {
+        setIsSimulatingFailure(true);
+        await resolveFacilityFailure(facility.id, facilities);
+        if (!isOnline) {
+          await loadFacilities(false);
+        } else {
+          await copyOnlineToOffline();
+          await loadFacilities(false);
+        }
+      } catch (error) {
+        console.error('Error resolving facility from Khartoum toast:', error);
+      } finally {
+        setIsSimulatingFailure(false);
+      }
+    }
+  };
+
+  const handleKhartoumToastStillFailing = (toast) => {
+    handleDismissActionToast(toast.id);
   };
 
   if (loading) {
@@ -699,8 +787,8 @@ const MapScreen = () => {
         />
       )}
 
-      {/* Simulation Panel Toggle (Admin Panel) - scrollable on native so all buttons fit */}
-      <View style={[styles.simulationPanel, Platform.OS !== 'web' && styles.simulationPanelNative]}>
+      {/* Simulation Panel Toggle (Admin Panel) - shown for both Control Center and Khartoum Response Team */}
+      <View style={[styles.simulationPanel, Platform.OS !== 'web' && styles.simulationPanelNative]} pointerEvents="box-none">
         {/* Arrow Toggle Button */}
         <Pressable
           style={({ pressed }) => [styles.simulationToggleArrow, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
@@ -850,6 +938,19 @@ const MapScreen = () => {
         />
       )}
 
+      {/* Signed-in role and Sign out - centered; wrapper uses box-none so it doesn't block admin panel arrow */}
+      <View style={styles.signedInStripWrapper} pointerEvents="box-none">
+        <View style={styles.signedInStrip}>
+          <Text style={styles.signedInLabel}>Signed in as: {ROLE_LABELS[userRole] ?? userRole}</Text>
+          <Pressable
+            style={({ pressed }) => [styles.signOutButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+            onPress={handleSignOut}
+          >
+            <Text style={styles.signOutButtonText}>Sign out</Text>
+          </Pressable>
+        </View>
+      </View>
+
       {/* Online/Offline Indicator */}
       <View style={[styles.statusIndicator, isOnline ? styles.online : styles.offline]}>
         <Text style={styles.statusText}>
@@ -867,13 +968,15 @@ const MapScreen = () => {
 
       {/* Failure Display Panel */}
       <FailureDisplayPanel
-        failedFacilities={failedFacilitiesList}
-        atRiskFacilities={atRiskFacilitiesList}
+        failedFacilities={failedForPanel}
+        atRiskFacilities={atRiskForPanel}
         onFacilityClick={(facility) => {
           setSelectedFacility(facility);
         }}
         onSendAlert={handleSendAlert}
         onShowActions={handleShowActions}
+        onIssueResolved={handleResolveFailure}
+        userRole={userRole}
         isOnline={isOnline}
       />
 
@@ -891,7 +994,7 @@ const MapScreen = () => {
         />
       )}
 
-      {/* Action status pop-ups at bottom (multiple allowed; stacked sideways) */}
+      {/* Action status pop-ups at bottom (Control Center + Khartoum; multiple allowed; stacked sideways) */}
       {actionToasts.length > 0 && (
         <View style={styles.actionToastContainer}>
           {actionToasts.map((toast, idx) => (
@@ -907,27 +1010,46 @@ const MapScreen = () => {
                 <Text style={styles.actionToastLabel}>Facility</Text>
                 <Text style={styles.actionToastFacilityName}>{toast.facilityName}</Text>
                 <Text style={styles.actionToastLabel}>Action</Text>
-                <Text style={styles.actionToastActionText} numberOfLines={2}>{toast.actionText}</Text>
-                <View style={styles.actionToastStatusRow}>
-                  {toast.status === 'in_progress' && (
-                    <>
-                      <ActivityIndicator size="small" color={ACCENT_BLUE} />
-                      <Text style={[styles.actionToastStatusText, styles.actionToastTextWithSpinner]}>Action in progress...</Text>
-                    </>
-                  )}
-                  {toast.status === 'complete_failure' && (
-                    <Text style={[styles.actionToastStatusText, styles.actionToastStatusFailure]}>Complete. Facility still in failure.</Text>
-                  )}
-                  {toast.status === 'complete_resolved' && (
-                    <Text style={[styles.actionToastStatusText, styles.actionToastStatusResolved]}>Facility resolved.</Text>
-                  )}
-                </View>
-                <Pressable
-                  style={({ pressed }) => [styles.actionToastClose, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
-                  onPress={() => handleDismissActionToast(toast.id)}
-                >
-                  <Text style={styles.actionToastCloseText}>Dismiss</Text>
-                </Pressable>
+                <Text style={styles.actionToastActionText} numberOfLines={toast.status === 'khartoum_pending' ? 3 : 2}>{toast.actionText}</Text>
+                {toast.status === 'khartoum_pending' ? (
+                  <View style={styles.khartoumCommandButtons}>
+                    <Pressable
+                      style={({ pressed }) => [styles.actionToastClose, transitionStyle, { opacity: pressed ? 0.9 : 1 }, styles.khartoumCommandButtonSpacer]}
+                      onPress={() => handleKhartoumToastResolved(toast)}
+                    >
+                      <Text style={styles.actionToastCloseText}>Facility resolved</Text>
+                    </Pressable>
+                    <Pressable
+                      style={({ pressed }) => [styles.khartoumCommandButtonStillFailing, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+                      onPress={() => handleKhartoumToastStillFailing(toast)}
+                    >
+                      <Text style={styles.khartoumCommandButtonText}>Facility still in failure</Text>
+                    </Pressable>
+                  </View>
+                ) : (
+                  <>
+                    <View style={styles.actionToastStatusRow}>
+                      {toast.status === 'in_progress' && (
+                        <>
+                          <ActivityIndicator size="small" color={ACCENT_BLUE} />
+                          <Text style={[styles.actionToastStatusText, styles.actionToastTextWithSpinner]}>Action in progress...</Text>
+                        </>
+                      )}
+                      {toast.status === 'complete_failure' && (
+                        <Text style={[styles.actionToastStatusText, styles.actionToastStatusFailure]}>Complete. Facility still in failure.</Text>
+                      )}
+                      {toast.status === 'complete_resolved' && (
+                        <Text style={[styles.actionToastStatusText, styles.actionToastStatusResolved]}>Facility resolved.</Text>
+                      )}
+                    </View>
+                    <Pressable
+                      style={({ pressed }) => [styles.actionToastClose, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+                      onPress={() => handleDismissActionToast(toast.id)}
+                    >
+                      <Text style={styles.actionToastCloseText}>Dismiss</Text>
+                    </Pressable>
+                  </>
+                )}
               </View>
             </View>
           ))}
@@ -1038,7 +1160,7 @@ const styles = StyleSheet.create({
     right: 16,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    zIndex: 1000,
+    zIndex: 1001,
   },
   simulationPanelNative: {
     maxWidth: '100%',
@@ -1251,6 +1373,44 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
+  signedInStripWrapper: {
+    position: 'absolute',
+    top: 16,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 999,
+  },
+  signedInStrip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#ffffff',
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 6,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 3,
+  },
+  signedInLabel: {
+    fontSize: 12,
+    color: '#333333',
+    marginRight: 12,
+    fontWeight: '500',
+  },
+  signOutButton: {
+    backgroundColor: '#666666',
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 4,
+  },
+  signOutButtonText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '600',
+  },
   statusIndicator: {
     position: 'absolute',
     top: 16,
@@ -1437,6 +1597,37 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: '#ffffff',
+  },
+  khartoumCommandButtons: {
+    flexDirection: 'row',
+    marginTop: 12,
+  },
+  khartoumCommandButtonSpacer: {
+    flex: 1,
+    marginRight: 6,
+  },
+  khartoumCommandButtonResolved: {
+    flex: 1,
+    marginRight: 6,
+    backgroundColor: '#2e7d32',
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  khartoumCommandButtonStillFailing: {
+    flex: 1,
+    marginLeft: 6,
+    backgroundColor: '#666666',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  khartoumCommandButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: 'bold',
   },
 });
 

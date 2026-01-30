@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useMemo, useCallback } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
-import FacilityConnections from './facility_connections';
 
 const WebDiv = Platform.OS === 'web' ? 'div' : View;
 
@@ -229,6 +228,7 @@ const MapComponent = ({ center, zoom, facilities, userLocation, route, onFacilit
 
   // Web implementation using Leaflet with direct HTML/CSS
   if (Platform.OS === 'web') {
+    const FacilityConnections = require('./facility_connections').default;
     // Check if Leaflet is loaded
     if (!MapContainer || !L) {
       return (

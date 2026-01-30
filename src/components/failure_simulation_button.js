@@ -7,7 +7,7 @@ import React from 'react';
 import { Text, Pressable, StyleSheet } from 'react-native';
 import { transitionStyle } from '../theme';
 
-const FailureSimulationButton = ({ onPress, isVisible, compact }) => {
+const FailureSimulationButton = ({ onPress, isVisible, compact, containerStyle }) => {
   if (!isVisible) {
     return null;
   }
@@ -17,6 +17,7 @@ const FailureSimulationButton = ({ onPress, isVisible, compact }) => {
       style={({ pressed }) => [
         styles.button,
         compact && styles.buttonCompact,
+        containerStyle,
         transitionStyle,
         { opacity: pressed ? 0.9 : 1 },
       ]}

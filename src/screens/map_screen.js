@@ -645,6 +645,7 @@ const MapScreen = () => {
                 isOnline ? styles.onlineOfflineButtonOnline : styles.onlineOfflineButtonOffline,
                 transitionStyle,
                 { opacity: pressed ? 0.9 : 1 },
+                Platform.OS === 'web' && styles.adminButtonWeb,
                 Platform.OS !== 'web' && styles.adminButtonNative,
               ]}
               onPress={handleToggleOnlineOffline}
@@ -659,6 +660,7 @@ const MapScreen = () => {
                 isSimulating && styles.simulationButtonActive,
                 transitionStyle,
                 { opacity: pressed ? 0.9 : 1 },
+                Platform.OS === 'web' && styles.adminButtonWeb,
                 Platform.OS !== 'web' && styles.adminButtonNative,
               ]}
               onPress={toggleSimulation}
@@ -671,20 +673,33 @@ const MapScreen = () => {
               isVisible={showSimulationPanel}
               onPress={() => setShowFailureModal(true)}
               compact={Platform.OS !== 'web'}
+              containerStyle={Platform.OS === 'web' ? styles.adminButtonWeb : undefined}
             />
             {failedFacilitiesList.length > 0 && (
               <Pressable
-                style={({ pressed }) => [styles.resolveFailureButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }, Platform.OS !== 'web' && styles.adminButtonNative]}
+                style={({ pressed }) => [
+                  styles.resolveFailureButton,
+                  transitionStyle,
+                  { opacity: pressed ? 0.9 : 1 },
+                  Platform.OS === 'web' && styles.adminButtonWeb,
+                  Platform.OS !== 'web' && styles.adminButtonNative,
+                ]}
                 onPress={() => setShowResolveFailureModal(true)}
               >
                 <Text style={[styles.resolveFailureButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]}>Resolve</Text>
               </Pressable>
             )}
             <Pressable
-              style={({ pressed }) => [styles.rankingButtonInline, transitionStyle, { opacity: pressed ? 0.9 : 1 }, Platform.OS !== 'web' && styles.adminButtonNative]}
+              style={({ pressed }) => [
+                styles.rankingButtonInline,
+                transitionStyle,
+                { opacity: pressed ? 0.9 : 1 },
+                Platform.OS === 'web' && styles.adminButtonWeb,
+                Platform.OS !== 'web' && styles.adminButtonNative,
+              ]}
               onPress={() => setShowRankingList(!showRankingList)}
             >
-              <Text style={[styles.rankingButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]}>
+              <Text style={[styles.rankingButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]} numberOfLines={1}>
                 {showRankingList ? 'Hide List' : 'Priority List'}
               </Text>
             </Pressable>
@@ -706,7 +721,7 @@ const MapScreen = () => {
           style={({ pressed }) => [styles.rankingButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
           onPress={() => setShowRankingList(!showRankingList)}
         >
-          <Text style={styles.rankingButtonText}>
+          <Text style={styles.rankingButtonText} numberOfLines={1}>
             {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
           </Text>
         </Pressable>
@@ -729,8 +744,8 @@ const MapScreen = () => {
         />
       )}
 
-      {/* Nearest Facility Info */}
-      {nearestFacility && !navigationRoute && (
+      {/* Nearest Facility Info - only when Simulate Walking is on */}
+      {nearestFacility && !navigationRoute && isSimulating && (
         <View style={styles.nearestFacilityInfo}>
           <Text style={styles.nearestFacilityTitle}>Nearest Facility</Text>
           <Text style={styles.nearestFacilityName}>{nearestFacility.facility.name}</Text>
@@ -924,12 +939,24 @@ const styles = StyleSheet.create({
   adminButtonTextNative: {
     fontSize: 12,
   },
+  adminButtonWeb: {
+    minWidth: 140,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 0,
+  },
   rankingButtonInline: {
     backgroundColor: '#ffffff',
     paddingVertical: 8,
     paddingHorizontal: 10,
     borderRadius: 8,
     marginRight: 4,
+    minWidth: 168,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
@@ -1031,6 +1058,9 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     padding: 12,
     borderRadius: 8,
+    minWidth: 168,
+    alignItems: 'center',
+    justifyContent: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,

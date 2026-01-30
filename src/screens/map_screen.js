@@ -26,6 +26,7 @@ import FailureDisplayPanel from '../components/failure_display_panel';
 import FailureSuggestionsModal from '../components/failure_suggestions_modal';
 import ResolveFailureModal from '../components/resolve_failure_modal';
 import GuideModal from '../components/guide_modal';
+import ReportedProblemsModal from '../components/reported_problems_modal';
 
 // Sudan center coordinates
 const SUDAN_CENTER = [15.5, 30.0];
@@ -39,6 +40,28 @@ const ROLE_LABELS = {
   control_center: 'Control Center',
   khartoum_response_team: 'Khartoum Response Team',
 };
+
+// Fake reported problems for Control Center "Reported Problems" window (same format as facility report)
+const FAKE_REPORTED_PROBLEMS = [
+  {
+    facilityName: 'Khartoum Water Treatment Plant',
+    facilityType: 'water',
+    facilityCondition: 'fair',
+    supplyAmount: 'medium',
+    populationAmount: null,
+    facilityImportance: 'very_important',
+    comments: 'Damage to pipelines (minor)',
+  },
+  {
+    facilityName: 'Emergency Shelter - Khartoum North',
+    facilityType: 'shelter',
+    facilityCondition: 'poor',
+    supplyAmount: 'low',
+    populationAmount: 'high',
+    facilityImportance: 'important',
+    comments: 'Building inspection states multiple defects in building foundation',
+  },
+];
 
 const MapScreen = () => {
   const route = useRoute();
@@ -84,6 +107,7 @@ const MapScreen = () => {
   const [showResolveFailureModal, setShowResolveFailureModal] = useState(false);
   const [isSimulatingFailure, setIsSimulatingFailure] = useState(false); // Prevent sync during failure simulation
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showReportedProblemsModal, setShowReportedProblemsModal] = useState(false);
   const [actionToasts, setActionToasts] = useState([]); // [{ id, facility, facilityName, actionText, status }]
   const actionToastTimeoutsRef = useRef({}); // id -> timeoutId
   const nextToastIdRef = useRef(0);
@@ -604,14 +628,19 @@ const MapScreen = () => {
     setActionToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 
-  // Khartoum Response Team: every 5s add one assigned-action toast to bottom stack (same as Control Center Action Status)
+  // Khartoum Response Team: every 5s add one assigned-action toast when ONLINE only (no popups when offline)
   const failedInKhartoumRef = useRef([]);
+  const isOnlineRef = useRef(isOnline);
   useEffect(() => {
     failedInKhartoumRef.current = failedInKhartoum;
   }, [failedInKhartoum]);
   useEffect(() => {
+    isOnlineRef.current = isOnline;
+  }, [isOnline]);
+  useEffect(() => {
     if (!isKhartoumTeam) return;
     const id = setInterval(() => {
+      if (!isOnlineRef.current) return;
       const list = failedInKhartoumRef.current;
       if (!list || list.length === 0) return;
       const facility = list[Math.floor(Math.random() * list.length)];
@@ -628,7 +657,7 @@ const MapScreen = () => {
       setActionToasts((prev) => [...prev, newToast]);
     }, KHARTOUM_COMMAND_INTERVAL_MS);
     return () => clearInterval(id);
-  }, [isKhartoumTeam]);
+  }, [isKhartoumTeam, isOnline]);
 
   useEffect(() => {
     return () => {
@@ -869,6 +898,22 @@ const MapScreen = () => {
                 {showRankingList ? 'Hide List' : 'Priority List'}
               </Text>
             </Pressable>
+            {!isKhartoumTeam && (
+              <Pressable
+                style={({ pressed }) => [
+                  styles.reportedProblemsButton,
+                  transitionStyle,
+                  { opacity: pressed ? 0.9 : 1 },
+                  Platform.OS === 'web' && styles.adminButtonWeb,
+                  Platform.OS !== 'web' && styles.adminButtonNative,
+                ]}
+                onPress={() => setShowReportedProblemsModal(true)}
+              >
+                <Text style={[styles.reportedProblemsButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]} numberOfLines={1}>
+                  Reported Problems
+                </Text>
+              </Pressable>
+            )}
           </ScrollView>
         )}
       </View>
@@ -883,14 +928,26 @@ const MapScreen = () => {
 
       {/* Intervention Ranking Toggle - web only (on native it's inside admin ScrollView) */}
       {Platform.OS === 'web' && (
-        <Pressable
-          style={({ pressed }) => [styles.rankingButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
-          onPress={() => setShowRankingList(!showRankingList)}
-        >
-          <Text style={styles.rankingButtonText} numberOfLines={1}>
-            {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
-          </Text>
-        </Pressable>
+        <>
+          <Pressable
+            style={({ pressed }) => [styles.rankingButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+            onPress={() => setShowRankingList(!showRankingList)}
+          >
+            <Text style={styles.rankingButtonText} numberOfLines={1}>
+              {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
+            </Text>
+          </Pressable>
+          {!isKhartoumTeam && (
+            <Pressable
+              style={({ pressed }) => [styles.reportedProblemsButtonWeb, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+              onPress={() => setShowReportedProblemsModal(true)}
+            >
+              <Text style={styles.rankingButtonText} numberOfLines={1}>
+                Reported Problems
+              </Text>
+            </Pressable>
+          )}
+        </>
       )}
 
       {/* Simulation Joystick */}
@@ -994,10 +1051,15 @@ const MapScreen = () => {
         />
       )}
 
-      {/* Action status pop-ups at bottom (Control Center + Khartoum; multiple allowed; stacked sideways) */}
-      {actionToasts.length > 0 && (
+      {/* Action status pop-ups at bottom (Control Center + Khartoum; Khartoum users see no Khartoum popups when offline) */}
+      {actionToasts.length > 0 && (() => {
+        const toastsToShow = isKhartoumTeam && !isOnline
+          ? actionToasts.filter((t) => t.status !== 'khartoum_pending')
+          : actionToasts;
+        if (toastsToShow.length === 0) return null;
+        return (
         <View style={styles.actionToastContainer}>
-          {actionToasts.map((toast, idx) => (
+          {toastsToShow.map((toast, idx) => (
             <View
               key={toast.id}
               style={[
@@ -1005,7 +1067,7 @@ const MapScreen = () => {
                 idx > 0 && styles.actionToastStacked,
               ]}
             >
-              <View style={styles.actionToastContent}>
+              <View style={[styles.actionToastContent, toast.status === 'khartoum_pending' && styles.actionToastContentUniform]}>
                 <Text style={styles.actionToastTitle}>Action status</Text>
                 <Text style={styles.actionToastLabel}>Facility</Text>
                 <Text style={styles.actionToastFacilityName}>{toast.facilityName}</Text>
@@ -1054,7 +1116,8 @@ const MapScreen = () => {
             </View>
           ))}
         </View>
-      )}
+        );
+      })()}
 
       {/* Resolve Failure Modal */}
       <ResolveFailureModal
@@ -1068,6 +1131,13 @@ const MapScreen = () => {
       <GuideModal
         visible={showGuideModal}
         onClose={() => setShowGuideModal(false)}
+      />
+
+      {/* Reported Problems - Control Center only */}
+      <ReportedProblemsModal
+        visible={showReportedProblemsModal}
+        reportedProblems={FAKE_REPORTED_PROBLEMS}
+        onClose={() => setShowReportedProblemsModal(false)}
       />
     </View>
   );
@@ -1199,6 +1269,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 8,
     marginRight: 4,
+    minWidth: 168,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  reportedProblemsButton: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginRight: 4,
+    minWidth: 168,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  reportedProblemsButtonText: {
+    color: ACCENT_BLUE,
+    fontSize: 14,
+    fontWeight: 'bold',
+  },
+  reportedProblemsButtonWeb: {
+    position: 'absolute',
+    top: 120,
+    right: 16,
+    backgroundColor: '#ffffff',
+    padding: 12,
+    borderRadius: 8,
     minWidth: 168,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1511,6 +1617,10 @@ const styles = StyleSheet.create({
     elevation: 5,
     minWidth: 260,
     maxWidth: 400,
+  },
+  actionToastContentUniform: {
+    width: 320,
+    minHeight: 240,
   },
   actionToastTitle: {
     fontSize: 18,

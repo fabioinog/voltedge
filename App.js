@@ -3,6 +3,12 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-native';
+import { useFonts } from 'expo-font';
+import {
+  Onest_400Regular,
+  Onest_600SemiBold,
+  Onest_700Bold,
+} from '@expo-google-fonts/onest';
 import { initDatabase } from './src/db/database';
 import { getStoredUserRole } from './src/utils/auth_storage';
 import HomeScreen from './src/screens/home_screen';
@@ -18,8 +24,22 @@ const App = () => {
   const [storedRole, setStoredRole] = useState(null);
   const [authChecked, setAuthChecked] = useState(false);
 
+  const [fontsLoaded, fontError] = useFonts({
+    Onest_400Regular,
+    Onest_600SemiBold,
+    Onest_700Bold,
+  });
+
   useEffect(() => {
     if (Platform.OS === 'web' && typeof document !== 'undefined') {
+      // Load Onest font once at app start so sign-in page doesn't flash (no FOUT)
+      const existing = document.querySelector('link[href*="Onest"]');
+      if (!existing) {
+        const link = document.createElement('link');
+        link.href = 'https://fonts.googleapis.com/css2?family=Onest:wght@400;600;700&display=swap';
+        link.rel = 'stylesheet';
+        document.head.appendChild(link);
+      }
       document.title = 'VoltEdge';
       
       // Monitor and keep title as "VoltEdge" even if React Navigation changes it
@@ -82,6 +102,16 @@ const App = () => {
       setAuthChecked(true);
     });
   }, []);
+
+  if (!fontsLoaded && !fontError) {
+    return (
+      <View style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#0066cc" />
+        <Text style={styles.loadingText}>Initializing VoltEdge...</Text>
+        <Text style={styles.loadingSubtext}>Loading fonts...</Text>
+      </View>
+    );
+  }
 
   if (!dbInitialized) {
     return (

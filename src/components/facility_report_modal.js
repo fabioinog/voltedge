@@ -3,7 +3,7 @@
  * Allows users to update facility condition, supply, population, and importance
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
+  TextInput,
 } from 'react-native';
 import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
 /**
@@ -47,6 +48,13 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
   const [supplyAmount, setSupplyAmount] = useState(facility?.supply_amount || 'medium');
   const [populationAmount, setPopulationAmount] = useState(facility?.population_amount || 'medium');
   const [facilityImportance, setFacilityImportance] = useState(facility?.facility_importance || 'moderate');
+  const [comments, setComments] = useState('');
+
+  useEffect(() => {
+    if (visible) {
+      setComments('');
+    }
+  }, [visible, facility?.id]);
 
   const handleSubmit = () => {
     const reportData = {
@@ -54,6 +62,7 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
       supplyAmount: facility.type === 'shelter' || facility.type === 'food' || facility.type === 'water' ? supplyAmount : null,
       populationAmount: facility.type === 'shelter' || facility.type === 'hospital' ? populationAmount : null,
       facilityImportance,
+      comments: comments.trim() || null,
     };
 
     onSubmit(reportData);
@@ -204,6 +213,20 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
                 ))}
               </View>
             </View>
+
+            {/* Comments */}
+            <View style={styles.section}>
+              <Text style={styles.label}>Comments</Text>
+              <TextInput
+                style={styles.commentsInput}
+                placeholder="Optional comments..."
+                placeholderTextColor="#999999"
+                value={comments}
+                onChangeText={setComments}
+                multiline
+                numberOfLines={3}
+              />
+            </View>
           </ScrollView>
 
           <View style={styles.buttonContainer}>
@@ -289,6 +312,16 @@ const styles = StyleSheet.create({
   },
   optionTextSelected: {
     color: '#ffffff',
+  },
+  commentsInput: {
+    borderWidth: 1,
+    borderColor: '#e0e0e0',
+    borderRadius: 8,
+    padding: 12,
+    fontSize: 14,
+    color: '#333333',
+    minHeight: 80,
+    textAlignVertical: 'top',
   },
   buttonContainer: {
     flexDirection: 'row',

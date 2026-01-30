@@ -77,21 +77,27 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                   <Text style={styles.failedBadge}>FAILED</Text>
                 </Pressable>
                 {isKhartoumTeam ? (
-                  <View style={styles.failedFacilityButtons}>
-                    <Pressable
-                      style={({ pressed }) => [
-                        styles.issueResolvedButton,
-                        transitionStyle,
-                        hoveredIssueResolvedId === facility.id && Platform.OS === 'web' && styles.issueResolvedButtonHover,
-                        { opacity: pressed ? 0.9 : 1 },
-                      ]}
-                      onPress={() => onIssueResolved && onIssueResolved(facility)}
-                      onMouseEnter={() => Platform.OS === 'web' && setHoveredIssueResolvedId(facility.id)}
-                      onMouseLeave={() => Platform.OS === 'web' && setHoveredIssueResolvedId(null)}
-                    >
-                      <Text style={styles.issueResolvedButtonText}>Issue resolved</Text>
-                    </Pressable>
-                  </View>
+                  isOnline ? (
+                    <View style={styles.failedFacilityButtons}>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.issueResolvedButton,
+                          transitionStyle,
+                          hoveredIssueResolvedId === facility.id && Platform.OS === 'web' && styles.issueResolvedButtonHover,
+                          { opacity: pressed ? 0.9 : 1 },
+                        ]}
+                        onPress={() => onIssueResolved && onIssueResolved(facility)}
+                        onMouseEnter={() => Platform.OS === 'web' && setHoveredIssueResolvedId(facility.id)}
+                        onMouseLeave={() => Platform.OS === 'web' && setHoveredIssueResolvedId(null)}
+                      >
+                        <Text style={styles.issueResolvedButtonText}>Issue resolved</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <View style={styles.offlineAlertMessage}>
+                      <Text style={styles.offlineAlertText}>Go online to resolve issues.</Text>
+                    </View>
+                  )
                 ) : isOnline ? (
                   <View style={styles.failedFacilityButtons}>
                     <Pressable
@@ -165,7 +171,7 @@ const styles = StyleSheet.create({
   panel: {
     position: 'absolute',
     left: 10,
-    top: 80,
+    top: 100,
     width: 280,
     height: '70%',
     maxHeight: 560,

@@ -1,37 +1,34 @@
 /**
- * Web Database Fallback
- * Uses IndexedDB when expo-sqlite fails on web
+ * Web Database Fallback – two DBs: online and offline (same schema).
+ * Uses IndexedDB when expo-sqlite fails on web.
  */
 
-let db = null;
-let dbName = 'voltedge_db';
-let dbVersion = 1;
+const dbVersion = 1;
+const STORE_NAMES = [
+  'infrastructure_assets',
+  'dependencies',
+  'failure_events',
+  'interventions',
+  'facility_timers',
+  'user_reports',
+  'public_data_cache',
+  'sync_status',
+];
 
-/**
- * Initialize IndexedDB database
- */
-const initIndexedDB = () => {
+let dbOnline = null;
+let dbOffline = null;
+
+const openIndexedDB = (dbName) => {
   return new Promise((resolve, reject) => {
     if (typeof window === 'undefined' || !window.indexedDB) {
       reject(new Error('IndexedDB not available'));
       return;
     }
-
     const request = indexedDB.open(dbName, dbVersion);
-
-    request.onerror = () => {
-      reject(new Error('Failed to open IndexedDB'));
-    };
-
-    request.onsuccess = (event) => {
-      db = event.target.result;
-      resolve(db);
-    };
-
+    request.onerror = () => reject(new Error('Failed to open IndexedDB: ' + dbName));
+    request.onsuccess = (event) => resolve(event.target.result);
     request.onupgradeneeded = (event) => {
       const database = event.target.result;
-
-      // Create object stores (tables)
       if (!database.objectStoreNames.contains('infrastructure_assets')) {
         const assetsStore = database.createObjectStore('infrastructure_assets', { keyPath: 'id', autoIncrement: true });
         assetsStore.createIndex('type', 'type', { unique: false });
@@ -39,342 +36,180 @@ const initIndexedDB = () => {
         assetsStore.createIndex('location', ['location_lat', 'location_lng'], { unique: false });
         assetsStore.createIndex('points', 'intervention_points', { unique: false });
       }
-
-      if (!database.objectStoreNames.contains('dependencies')) {
-        database.createObjectStore('dependencies', { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!database.objectStoreNames.contains('failure_events')) {
-        database.createObjectStore('failure_events', { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!database.objectStoreNames.contains('interventions')) {
-        database.createObjectStore('interventions', { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!database.objectStoreNames.contains('facility_timers')) {
-        database.createObjectStore('facility_timers', { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!database.objectStoreNames.contains('user_reports')) {
-        database.createObjectStore('user_reports', { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!database.objectStoreNames.contains('public_data_cache')) {
-        database.createObjectStore('public_data_cache', { keyPath: 'id', autoIncrement: true });
-      }
-
-      if (!database.objectStoreNames.contains('sync_status')) {
-        database.createObjectStore('sync_status', { keyPath: 'table_name' });
-      }
+      STORE_NAMES.forEach((name) => {
+        if (!database.objectStoreNames.contains(name) && name !== 'infrastructure_assets') {
+          database.createObjectStore(name, name === 'sync_status' ? { keyPath: 'table_name' } : { keyPath: 'id', autoIncrement: true });
+        }
+      });
     };
   });
 };
 
-const executeQueryIndexedDB = async (storeName, filterFn = null) => {
+const executeQueryIndexedDB = async (db, storeName, filterFn = null) => {
   return new Promise((resolve, reject) => {
     if (!db) {
       reject(new Error('Database not initialized'));
       return;
     }
-
     const transaction = db.transaction([storeName], 'readonly');
     const store = transaction.objectStore(storeName);
     const request = store.getAll();
-
     request.onsuccess = () => {
       let results = request.result;
-      if (filterFn) {
-        results = results.filter(filterFn);
-      }
+      if (filterFn) results = results.filter(filterFn);
       resolve(results);
     };
-
-    request.onerror = () => {
-      reject(new Error('Query failed'));
-    };
+    request.onerror = () => reject(new Error('Query failed'));
   });
 };
 
-const executeWriteIndexedDB = async (operation, storeName, data, key = null) => {
+const executeWriteIndexedDB = async (db, operation, storeName, data, key = null) => {
   return new Promise((resolve, reject) => {
     if (!db) {
       reject(new Error('Database not initialized'));
       return;
     }
-
     const transaction = db.transaction([storeName], 'readwrite');
     const store = transaction.objectStore(storeName);
-
     let request;
-    if (operation === 'insert') {
-      request = store.add(data);
-    } else if (operation === 'update') {
-      request = store.put(data);
-    } else if (operation === 'delete') {
-      request = store.delete(key);
-    } else {
-      reject(new Error('Invalid operation'));
-      return;
-    }
-
-    request.onsuccess = () => {
-      resolve({ lastInsertRowId: request.result });
-    };
-
-    request.onerror = () => {
-      reject(new Error('Write operation failed'));
-    };
+    if (operation === 'insert') request = store.add(data);
+    else if (operation === 'update') request = store.put(data);
+    else if (operation === 'delete') request = store.delete(key);
+    else return reject(new Error('Invalid operation'));
+    request.onsuccess = () => resolve({ lastInsertRowId: request.result });
+    request.onerror = () => reject(new Error('Write operation failed'));
   });
 };
 
-const queryIndexedDB = async (query, params = []) => {
+const queryIndexedDBWithDb = async (db, query, params = []) => {
   const lowerQuery = query.toLowerCase().trim();
-
-  // SELECT queries
   if (lowerQuery.startsWith('select')) {
-    // Extract table name
     const fromMatch = query.match(/from\s+(\w+)/i);
     if (!fromMatch) return [];
-
     const tableName = fromMatch[1];
-    let results = await executeQueryIndexedDB(tableName);
-
-    // Simple WHERE clause parsing
+    let results = await executeQueryIndexedDB(db, tableName);
     const whereMatch = query.match(/where\s+(.+?)(?:\s+order|\s+limit|$)/i);
     if (whereMatch && params.length > 0) {
-      const whereClause = whereMatch[1];
-      // Simple equality filter
-      if (whereClause.includes('= ?')) {
-        const fieldMatch = whereClause.match(/(\w+)\s*=\s*\?/);
-        if (fieldMatch) {
-          const field = fieldMatch[1];
-          const value = params[0];
-          results = results.filter(item => item[field] === value);
-        }
+      const fieldMatch = whereMatch[1].match(/(\w+)\s*=\s*\?/);
+      if (fieldMatch) {
+        const field = fieldMatch[1];
+        const value = params[0];
+        results = results.filter((item) => item[field] === value);
       }
     }
-
-    // ORDER BY
     const orderMatch = query.match(/order\s+by\s+(\w+)\s+(asc|desc)/i);
     if (orderMatch) {
       const field = orderMatch[1];
       const direction = orderMatch[2].toLowerCase();
       results.sort((a, b) => {
-        const aVal = a[field] || 0;
-        const bVal = b[field] || 0;
+        const aVal = a[field] ?? 0;
+        const bVal = b[field] ?? 0;
         return direction === 'desc' ? bVal - aVal : aVal - bVal;
       });
     }
-
-    // COUNT(*)
-    if (lowerQuery.includes('count(*)')) {
-      return [{ count: results.length }];
-    }
-
+    if (lowerQuery.includes('count(*)')) return [{ count: results.length }];
     return results;
   }
-
   return [];
 };
 
-/**
- * Write operation for IndexedDB
- */
-const writeIndexedDB = async (query, params = []) => {
+const writeIndexedDBWithDb = async (db, query, params = []) => {
   const lowerQuery = query.toLowerCase().trim();
 
-  // INSERT
   if (lowerQuery.startsWith('insert')) {
     const intoMatch = query.match(/into\s+(\w+)/i);
     if (!intoMatch) throw new Error('Invalid INSERT query');
-
     const tableName = intoMatch[1];
-    
-    // Handle INSERT OR IGNORE
     const isIgnore = lowerQuery.includes('insert or ignore');
-    
-    // Extract field names from INSERT INTO table (field1, field2) VALUES (?, ?)
     const fieldsMatch = query.match(/into\s+\w+\s*\(([^)]+)\)/i);
-    const fields = fieldsMatch ? fieldsMatch[1].split(',').map(f => f.trim()) : [];
-
-    // Extract values - handle both VALUES (?, ?) and VALUES (value1, value2)
+    const fields = fieldsMatch ? fieldsMatch[1].split(',').map((f) => f.trim()) : [];
     const valuesMatch = query.match(/values\s*\(([^)]+)\)/i);
     if (!valuesMatch) throw new Error('Invalid INSERT values');
-
     const data = {};
     fields.forEach((field, index) => {
-      if (params[index] !== undefined && params[index] !== null) {
-        data[field] = params[index];
-      }
+      if (params[index] !== undefined && params[index] !== null) data[field] = params[index];
     });
-
-    // Add timestamps if not provided
-    if (!data.created_at && tableName !== 'sync_status') {
-      data.created_at = new Date().toISOString();
-    }
-    if (!data.updated_at && tableName !== 'sync_status') {
-      data.updated_at = new Date().toISOString();
-    }
-
+    if (!data.created_at && tableName !== 'sync_status') data.created_at = new Date().toISOString();
+    if (!data.updated_at && tableName !== 'sync_status') data.updated_at = new Date().toISOString();
     try {
-      return await executeWriteIndexedDB('insert', tableName, data);
-    } catch (error) {
-      if (isIgnore && error.message.includes('ConstraintError')) {
-        // Ignore duplicate key errors for INSERT OR IGNORE
-        return { lastInsertRowId: null };
-      }
-      throw error;
+      return await executeWriteIndexedDB(db, 'insert', tableName, data);
+    } catch (e) {
+      if (isIgnore && (e.message || '').includes('Constraint')) return { lastInsertRowId: null };
+      throw e;
     }
   }
 
-  // UPDATE
   if (lowerQuery.startsWith('update')) {
     const tableMatch = query.match(/update\s+(\w+)/i);
     if (!tableMatch) throw new Error('Invalid UPDATE query');
-
     const tableName = tableMatch[1];
-    // Handle multiline queries - normalize whitespace first (replace all whitespace with single space)
     const normalizedQuery = query.replace(/[\s\n\r\t]+/g, ' ').trim();
-    
-    // Extract SET clause - match everything between SET and WHERE
-    let setClause;
-    const setMatch = normalizedQuery.match(/set\s+(.+?)\s+where/i);
-    if (!setMatch) {
-      // Try without WHERE clause (shouldn't happen but handle gracefully)
-      const setMatchNoWhere = normalizedQuery.match(/set\s+(.+)$/i);
-      if (!setMatchNoWhere) {
-        console.error('UPDATE query parsing failed. Normalized query:', normalizedQuery);
-        throw new Error('Invalid UPDATE SET - could not parse SET clause');
-      }
-      setClause = setMatchNoWhere[1].trim();
-    } else {
-      setClause = setMatch[1].trim();
-    }
-    
-    if (!setClause || setClause.length === 0) {
-      console.error('SET clause is empty. Normalized query:', normalizedQuery);
-      throw new Error('Invalid UPDATE SET - SET clause is empty');
-    }
-
+    const setMatch = normalizedQuery.match(/set\s+(.+?)\s+where/i) || normalizedQuery.match(/set\s+(.+)$/i);
+    if (!setMatch) throw new Error('Invalid UPDATE SET');
+    const setClause = setMatch[1].trim();
     const updates = {};
-
-    // Parse SET field1 = ?, field2 = ?, field3 = CURRENT_TIMESTAMP
-    const setFields = setClause.split(',').map(s => s.trim());
+    const setFields = setClause.split(',').map((s) => s.trim());
     let paramIndex = 0;
-    
     setFields.forEach((field) => {
-      // Match field = ? or field = CURRENT_TIMESTAMP
       const fieldMatch = field.match(/(\w+)\s*=\s*(?:\?|CURRENT_TIMESTAMP)/i);
       if (fieldMatch) {
         const fieldName = fieldMatch[1];
-        if (field.includes('CURRENT_TIMESTAMP')) {
-          updates[fieldName] = new Date().toISOString();
-        } else if (field.includes('?')) {
-          updates[fieldName] = params[paramIndex];
-          paramIndex++;
-        }
+        if (field.includes('CURRENT_TIMESTAMP')) updates[fieldName] = new Date().toISOString();
+        else if (field.includes('?')) updates[fieldName] = params[paramIndex++];
       }
     });
-
-    // Get the record to update - handle WHERE id = ? or WHERE table_name = ?
-    // Use normalized query for WHERE parsing too
     const whereMatch = normalizedQuery.match(/where\s+(\w+)\s*=\s*\?/i);
     if (!whereMatch) throw new Error('UPDATE requires WHERE clause with ?');
-
     const whereField = whereMatch[1];
     const whereValue = params[paramIndex];
-
-    // Get existing record
-    const existing = await executeQueryIndexedDB(tableName, item => item[whereField] === whereValue);
+    const existing = await executeQueryIndexedDB(db, tableName, (item) => item[whereField] === whereValue);
     if (existing.length === 0) {
-      // For sync_status, create if doesn't exist
       if (tableName === 'sync_status') {
-        const newRecord = { table_name: whereValue, ...updates };
-        return await executeWriteIndexedDB('insert', tableName, newRecord);
+        return await executeWriteIndexedDB(db, 'insert', tableName, { table_name: whereValue, ...updates });
       }
       throw new Error('Record not found');
     }
-
     const updated = { ...existing[0], ...updates };
-    
-    // For infrastructure_assets, if we're updating status to 'failed', make sure it persists
-    if (tableName === 'infrastructure_assets' && updates.status === 'failed') {
-      console.log(`webDatabase: Updating facility ${updated.id} to failed status`);
-    }
-    
-    const result = await executeWriteIndexedDB('update', tableName, updated);
-    
-    // Verify the update worked for infrastructure_assets status updates
-    if (tableName === 'infrastructure_assets' && updates.status) {
-      await new Promise(resolve => setTimeout(resolve, 50)); // Small delay for IndexedDB
-      const verify = await executeQueryIndexedDB(tableName, item => item.id === updated.id);
-      if (verify[0] && verify[0].status === updates.status) {
-        console.log(`webDatabase: ✓ Verified ${updates.status} status update for facility ${updated.id}`);
-      } else {
-        console.error(`webDatabase: ✗ Status update verification failed! Expected ${updates.status}, got ${verify[0]?.status}`);
-      }
-    }
-    
-    return result;
+    return await executeWriteIndexedDB(db, 'update', tableName, updated);
   }
 
-  // DELETE
   if (lowerQuery.startsWith('delete')) {
     const fromMatch = query.match(/from\s+(\w+)/i);
     if (!fromMatch) throw new Error('Invalid DELETE query');
-
     const tableName = fromMatch[1];
-    
-    // DELETE FROM table (no WHERE clause - delete all)
     if (!query.match(/where/i)) {
-      // Clear all records from the object store
       return new Promise((resolve, reject) => {
-        if (!db) {
-          reject(new Error('Database not initialized'));
-          return;
-        }
-
+        if (!db) return reject(new Error('Database not initialized'));
         const transaction = db.transaction([tableName], 'readwrite');
         const store = transaction.objectStore(tableName);
-        const request = store.clear();
-
-        request.onsuccess = () => {
-          resolve({ changes: 0 }); // We don't track exact count
-        };
-
-        request.onerror = () => {
-          reject(new Error('DELETE failed'));
-        };
+        store.clear().onsuccess = () => resolve({ changes: 0 });
+        transaction.onerror = () => reject(new Error('DELETE failed'));
       });
     }
-
-    // DELETE FROM table WHERE field = ?
     const whereMatch = query.match(/where\s+(\w+)\s*=\s*\?/i);
     if (whereMatch && params.length > 0) {
       const whereField = whereMatch[1];
       const whereValue = params[0];
-      
-      // Get records to delete
-      const toDelete = await executeQueryIndexedDB(tableName, item => item[whereField] === whereValue);
-      
-      // Delete each record
+      const toDelete = await executeQueryIndexedDB(db, tableName, (item) => item[whereField] === whereValue);
       for (const record of toDelete) {
-        await executeWriteIndexedDB('delete', tableName, null, record.id);
+        await executeWriteIndexedDB(db, 'delete', tableName, null, record.id);
       }
-      
       return { changes: toDelete.length };
     }
-
     throw new Error('DELETE requires WHERE clause or no clause for delete all');
   }
 
   throw new Error('Unsupported query type: ' + query.substring(0, 50));
 };
 
+function getDb(which) {
+  return which === 'online' ? dbOnline : dbOffline;
+}
+
 export const initWebDatabase = async () => {
   try {
-    await initIndexedDB();
+    dbOnline = await openIndexedDB('voltedge_online');
+    dbOffline = await openIndexedDB('voltedge_offline');
     return true;
   } catch (error) {
     console.error('IndexedDB initialization failed:', error);
@@ -382,6 +217,18 @@ export const initWebDatabase = async () => {
   }
 };
 
-export const executeQueryWeb = queryIndexedDB;
-export const executeWriteWeb = writeIndexedDB;
-export const getWebDatabase = () => db;
+export const executeQueryWeb = async (query, params = [], which = 'offline') => {
+  const db = getDb(which);
+  if (!db) throw new Error('Database not initialized');
+  return queryIndexedDBWithDb(db, query, params);
+};
+
+export const executeWriteWeb = async (query, params = [], which = 'offline') => {
+  const db = getDb(which);
+  if (!db) throw new Error('Database not initialized');
+  return writeIndexedDBWithDb(db, query, params);
+};
+
+export const getWebDatabase = (which = 'offline') => getDb(which);
+
+export { executeQueryIndexedDB, executeWriteIndexedDB, queryIndexedDBWithDb, writeIndexedDBWithDb, STORE_NAMES };

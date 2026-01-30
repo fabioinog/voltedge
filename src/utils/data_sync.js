@@ -1,55 +1,35 @@
 import { executeQuery, executeWrite, getDatabase } from '../db/database';
 import { calculateInterventionPoints } from './intervention_ranking';
 import { fetchAllFacilities } from '../../api_simulation';
+import { isOnline as getConnectionMode } from './connection_state';
 
-export const isOnline = () => {
-  if (typeof navigator !== 'undefined' && navigator.onLine !== undefined) {
-    return navigator.onLine;
-  }
-  return true; // Assume online if can't determine
-};
+export const isOnline = () => getConnectionMode();
 
-export const fetchPublicFacilityData = async (bounds) => {
-  if (!isOnline()) {
-    return null;
-  }
+const normalizeFacilityFromApi = (facility) => ({
+  id: facility.id,
+  name: facility.name,
+  type: facility.type,
+  lat: facility.location_lat ?? facility.lat,
+  lng: facility.location_lng ?? facility.lng,
+  status: facility.status === 'failed' ? 'operational' : (facility.status || 'operational'),
+  facility_condition: facility.facility_condition,
+  supply_amount: facility.supply_amount,
+  population_amount: facility.population_amount,
+  facility_importance: facility.facility_importance,
+  population_served: facility.population_served || 0,
+  urgency_hours: facility.urgency_hours || 0,
+  effort_penalty: facility.effort_penalty || 1.0,
+  cascade_prevention_count: facility.cascade_prevention_count || 0,
+  water_level_forecast: facility.type === 'water' ? facility.supply_amount : facility.water_level_forecast ?? null,
+  power_outage_detected: 0,
+});
 
+export const fetchPublicFacilityData = async () => {
+  if (!isOnline()) return null;
   try {
-    // Fetch from API simulation (proof of concept)
-    // Future: Replace with real API endpoints
     const apiFacilities = await fetchAllFacilities();
-    
-    // Transform API data to match our database schema
-    // IMPORTANT: Never set status to 'failed' from API - only operational or at_risk
-    // Failures should only be set through user simulation
-    const facilities = apiFacilities.map(facility => ({
-      id: facility.id,
-      name: facility.name,
-      type: facility.type,
-      lat: facility.location_lat,
-      lng: facility.location_lng,
-      // Force operational status - failures are only set through simulation
-      status: facility.status === 'failed' ? 'operational' : (facility.status || 'operational'),
-      facility_condition: facility.facility_condition,
-      supply_amount: facility.supply_amount,
-      population_amount: facility.population_amount,
-      facility_importance: facility.facility_importance,
-      population_served: facility.population_served || 0,
-      urgency_hours: facility.urgency_hours || 0,
-      effort_penalty: facility.effort_penalty || 1.0,
-      cascade_prevention_count: facility.cascade_prevention_count || 0,
-      // Additional fields from API
-      water_level_forecast: facility.type === 'water' ? facility.supply_amount : null,
-      power_outage_detected: 0, // Never set to 1 from API - only through simulation
-    }));
-    
-    console.log(`Fetched ${facilities.length} facilities from API simulation`);
-    
-    return {
-      facilities: facilities,
-      lastUpdated: new Date().toISOString(),
-      source: 'api_simulation', // Track data source
-    };
+    const facilities = apiFacilities.map(normalizeFacilityFromApi);
+    return { facilities, lastUpdated: new Date().toISOString(), source: 'api_simulation' };
   } catch (error) {
     console.error('Error fetching public facility data:', error);
     return null;
@@ -57,41 +37,18 @@ export const fetchPublicFacilityData = async (bounds) => {
 };
 
 /**
- * Sync facilities with online data
+ * Sync: when online, update online DB from API then copy online → offline so the app (which uses offline DB) gets updates.
  */
 export const syncFacilities = async () => {
   if (!isOnline()) {
     console.log('Offline - skipping sync');
     return;
   }
-
   try {
-    // Get facilities that need syncing
-    const unsyncedReports = await executeQuery(
-      'SELECT * FROM user_reports WHERE synced = 0'
-    );
-
-    // TODO: Upload unsynced reports to server
-    // For now, just mark as synced
-    for (const report of unsyncedReports) {
-      await executeWrite(
-        'UPDATE user_reports SET synced = 1 WHERE id = ?',
-        [report.id]
-      );
-    }
-
-    // Fetch and update public data from API simulation
-    const publicData = await fetchPublicFacilityData();
-    if (publicData && publicData.facilities && publicData.facilities.length > 0) {
-      await updateFacilitiesFromPublicData(publicData.facilities);
-    }
-
-    // Update sync status
-    await executeWrite(
-      'UPDATE sync_status SET last_synced_at = CURRENT_TIMESTAMP, pending_changes = 0 WHERE table_name = ?',
-      ['infrastructure_assets']
-    );
-
+    const { ingestFromApi } = await import('../../online_environment/ingest');
+    const { copyOnlineToOffline } = await import('../db/database');
+    await ingestFromApi();
+    await copyOnlineToOffline();
   } catch (error) {
     console.error('Error syncing facilities:', error);
   }

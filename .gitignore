@@ -78,6 +78,9 @@ coverage/
 *.tmp
 *.temp
 
+# Backend
+backend/node_modules/
+
 # Cursor rules
 .cursor/
 .cursorrules

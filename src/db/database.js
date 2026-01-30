@@ -1,15 +1,15 @@
 import { Platform } from 'react-native';
-import { initWebDatabase, executeQueryWeb, executeWriteWeb } from './web_database';
+import { initWebDatabase, executeQueryWeb, executeWriteWeb, STORE_NAMES as WEB_STORE_NAMES } from './web_database';
+import { getConnectionMode } from '../utils/connection_state';
 
 let SQLite = null;
-let db = null;
+let dbOnline = null;
+let dbOffline = null;
 let useWebFallback = false;
 
 try {
   SQLite = require('expo-sqlite');
-  if (SQLite.default) {
-    SQLite = SQLite.default;
-  }
+  if (SQLite.default) SQLite = SQLite.default;
 } catch (error) {
   console.warn('Error importing expo-sqlite:', error);
 }
@@ -18,12 +18,10 @@ if (Platform.OS === 'web') {
   useWebFallback = true;
 }
 
+export const getConnectionModeFromDb = () => getConnectionMode();
+
 export const initDatabase = async () => {
   try {
-    if (db && !useWebFallback) {
-      return db;
-    }
-
     if (Platform.OS === 'web') {
       try {
         await initWebDatabase();
@@ -32,54 +30,43 @@ export const initDatabase = async () => {
         return { _isWebFallback: true };
       } catch (indexedDBError) {
         console.error('IndexedDB initialization failed:', indexedDBError);
-        // Still return success - app can work without database for now
         useWebFallback = true;
-        console.warn('Continuing without database - some features may be limited');
         return { _isWebFallback: true, _error: indexedDBError.message };
       }
     }
 
-    // Native platforms use expo-sqlite
     if (!SQLite) {
       const sqliteModule = require('expo-sqlite');
       SQLite = sqliteModule.default || sqliteModule;
     }
-
     if (typeof SQLite.openDatabaseAsync !== 'function') {
-      if (SQLite.default && typeof SQLite.default.openDatabaseAsync === 'function') {
-        SQLite = SQLite.default;
-      } else {
-        throw new Error('expo-sqlite openDatabaseAsync method not found');
-      }
+      if (SQLite.default && typeof SQLite.default.openDatabaseAsync === 'function') SQLite = SQLite.default;
+      else throw new Error('expo-sqlite openDatabaseAsync method not found');
     }
 
-    db = await SQLite.openDatabaseAsync('voltedge.db');
-    await createSchema();
-    useWebFallback = false;
-    return db;
+    if (!dbOffline) dbOffline = await SQLite.openDatabaseAsync('voltedge_offline.db');
+    if (!dbOnline) dbOnline = await SQLite.openDatabaseAsync('voltedge_online.db');
+    await createSchemaForDb(dbOffline);
+    await createSchemaForDb(dbOnline);
+    return getCurrentDb();
   } catch (error) {
     console.error('Database initialization error:', error);
     throw error;
   }
 };
 
+/** App always uses offline DB; online DB is only for admin/API and sync. */
+function getCurrentDb() {
+  if (useWebFallback) return { _isWebFallback: true };
+  return dbOffline;
+}
+
 /**
- * Create database schema and tables
- * Handles infrastructure assets, dependencies, failures, and interventions
+ * Create database schema on a given DB (native only).
  */
-const createSchema = async () => {
-  if (useWebFallback) {
-    // Schema is created in initWebDatabase
-    await createSchemaWeb();
-    return;
-  }
-
-  if (!db) {
-    throw new Error('Database not initialized');
-  }
-
+const createSchemaForDb = async (db) => {
+  if (!db) throw new Error('Database not initialized');
   try {
-    // Infrastructure Assets table (updated for facilities)
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS infrastructure_assets (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -251,62 +238,45 @@ const createSchema = async () => {
 };
 
 /**
- * Get database instance (initialize if needed)
- * @returns {Promise<SQLite.SQLiteDatabase>} Database instance
+ * Get database instance (always offline DB – app only connects to offline DB).
  */
 export const getDatabase = async () => {
-  if (!db && !useWebFallback) {
-    await initDatabase();
-  }
-  if (useWebFallback) {
-    return { _isWebFallback: true };
-  }
-  return db;
+  if (!dbOffline && !dbOnline && !useWebFallback) await initDatabase();
+  return getCurrentDb();
 };
 
-/**
- * Create schema for web (IndexedDB) - simplified version
- */
 const createSchemaWeb = async () => {
-  // Schema is created in initWebDatabase
-  // Just ensure sync_status is initialized
-  try {
-    const existing = await executeQueryWeb('SELECT * FROM sync_status WHERE table_name = ?', ['infrastructure_assets']);
-    if (existing.length === 0) {
-      // Initialize sync status records
-      const tables = ['infrastructure_assets', 'dependencies', 'failure_events', 'interventions', 'facility_timers', 'user_reports', 'public_data_cache'];
-      for (const table of tables) {
-        await executeWriteWeb(
-          'INSERT INTO sync_status (table_name, last_synced_at, pending_changes) VALUES (?, ?, ?)',
-          [table, null, 0]
-        );
+  const tables = ['infrastructure_assets', 'dependencies', 'failure_events', 'interventions', 'facility_timers', 'user_reports', 'public_data_cache'];
+  for (const which of ['online', 'offline']) {
+    try {
+      const existing = await executeQueryWeb('SELECT * FROM sync_status WHERE table_name = ?', ['infrastructure_assets'], which);
+      if (existing.length === 0) {
+        for (const table of tables) {
+          await executeWriteWeb(
+            'INSERT INTO sync_status (table_name, last_synced_at, pending_changes) VALUES (?, ?, ?)',
+            [table, null, 0],
+            which
+          );
+        }
       }
+    } catch (e) {
+      console.warn('Schema init warning for', which, e);
     }
-  } catch (error) {
-    console.warn('Schema initialization warning:', error);
   }
 };
 
-/**
- * Execute a query with error handling and retry logic
- * @param {string} query - SQL query string
- * @param {Array} params - Query parameters
- * @returns {Promise<any>} Query result
- */
+/** App always uses offline DB for reads/writes. */
+const whichDb = () => 'offline';
+
 export const executeQuery = async (query, params = []) => {
   try {
-    if (useWebFallback) {
-      return await executeQueryWeb(query, params);
-    }
+    if (useWebFallback) return await executeQueryWeb(query, params, whichDb());
     const database = await getDatabase();
     return await database.getAllAsync(query, params);
   } catch (error) {
     console.error('Query execution error:', error);
-    // Retry once on transient failures
     try {
-      if (useWebFallback) {
-        return await executeQueryWeb(query, params);
-      }
+      if (useWebFallback) return await executeQueryWeb(query, params, whichDb());
       const database = await getDatabase();
       return await database.getAllAsync(query, params);
     } catch (retryError) {
@@ -316,32 +286,38 @@ export const executeQuery = async (query, params = []) => {
   }
 };
 
-/**
- * Execute a write operation (INSERT, UPDATE, DELETE)
- * @param {string} query - SQL query string
- * @param {Array} params - Query parameters
- * @returns {Promise<SQLite.SQLiteRunResult>} Execution result
- */
+export const executeQueryToOnline = async (query, params = []) => {
+  if (useWebFallback) return await executeQueryWeb(query, params, 'online');
+  return await dbOnline.getAllAsync(query, params);
+};
+
+export const executeWriteToOnline = async (query, params = []) => {
+  if (useWebFallback) return await executeWriteWeb(query, params, 'online');
+  return await dbOnline.runAsync(query, params);
+};
+
+export const executeQueryToOffline = async (query, params = []) => {
+  if (useWebFallback) return await executeQueryWeb(query, params, 'offline');
+  return await dbOffline.getAllAsync(query, params);
+};
+
+export const executeWriteToOffline = async (query, params = []) => {
+  if (useWebFallback) return await executeWriteWeb(query, params, 'offline');
+  return await dbOffline.runAsync(query, params);
+};
+
 export const executeWrite = async (query, params = []) => {
   try {
     if (useWebFallback) {
-      const result = await executeWriteWeb(query, params);
-      // Mark table as having pending changes for sync
+      const result = await executeWriteWeb(query, params, whichDb());
       const tableName = extractTableName(query);
-      if (tableName) {
-        await markPendingSync(tableName);
-      }
+      if (tableName) await markPendingSync(tableName);
       return result;
     }
     const database = await getDatabase();
     const result = await database.runAsync(query, params);
-    
-    // Mark table as having pending changes for sync
     const tableName = extractTableName(query);
-    if (tableName) {
-      await markPendingSync(tableName);
-    }
-    
+    if (tableName) await markPendingSync(tableName);
     return result;
   } catch (error) {
     console.error('Write execution error:', error);
@@ -366,52 +342,90 @@ const extractTableName = (query) => {
 const markPendingSync = async (tableName) => {
   try {
     if (useWebFallback) {
-      // Get current status
-      const status = await executeQueryWeb('SELECT * FROM sync_status WHERE table_name = ?', [tableName]);
+      const status = await executeQueryWeb('SELECT * FROM sync_status WHERE table_name = ?', [tableName], whichDb());
       if (status.length > 0) {
         const current = status[0].pending_changes || 0;
-        await executeWriteWeb(
-          'UPDATE sync_status SET pending_changes = ? WHERE table_name = ?',
-          [current + 1, tableName]
-        );
+        await executeWriteWeb('UPDATE sync_status SET pending_changes = ? WHERE table_name = ?', [current + 1, tableName], whichDb());
       }
       return;
     }
     const database = await getDatabase();
-    await database.runAsync(
-      'UPDATE sync_status SET pending_changes = pending_changes + 1 WHERE table_name = ?',
-      [tableName]
-    );
+    await database.runAsync('UPDATE sync_status SET pending_changes = pending_changes + 1 WHERE table_name = ?', [tableName]);
   } catch (error) {
     console.error('Sync status update error:', error);
-    // Non-critical, don't throw
   }
 };
 
-/**
- * Reset database (for testing/development)
- * WARNING: This deletes all data
- */
 export const resetDatabase = async () => {
   try {
     if (useWebFallback) {
-      // For IndexedDB, we'd need to delete and recreate the database
       console.warn('Database reset not fully supported with IndexedDB fallback');
       return;
     }
-    const database = await getDatabase();
-    await database.execAsync(`
-      DROP TABLE IF EXISTS facility_timers;
-      DROP TABLE IF EXISTS interventions;
-      DROP TABLE IF EXISTS failure_events;
-      DROP TABLE IF EXISTS dependencies;
-      DROP TABLE IF EXISTS infrastructure_assets;
-      DROP TABLE IF EXISTS sync_status;
-    `);
-    await createSchema();
+    const dropSql = `DROP TABLE IF EXISTS facility_timers; DROP TABLE IF EXISTS interventions; DROP TABLE IF EXISTS failure_events; DROP TABLE IF EXISTS dependencies; DROP TABLE IF EXISTS infrastructure_assets; DROP TABLE IF EXISTS sync_status;`;
+    await dbOffline.execAsync(dropSql);
+    await dbOnline.execAsync(dropSql);
+    await createSchemaForDb(dbOffline);
+    await createSchemaForDb(dbOnline);
     console.log('Database reset complete');
   } catch (error) {
     console.error('Database reset error:', error);
     throw error;
   }
 };
+
+const TABLE_NAMES = ['infrastructure_assets', 'dependencies', 'failure_events', 'interventions', 'facility_timers', 'user_reports', 'public_data_cache', 'sync_status'];
+
+/**
+ * Copy full state from online DB to offline DB (e.g. when user goes offline).
+ */
+export const copyOnlineToOffline = async () => {
+  if (useWebFallback) {
+    for (const storeName of WEB_STORE_NAMES) {
+      const rows = await executeQueryToOnline('SELECT * FROM ' + storeName, []);
+      await executeWriteToOffline('DELETE FROM ' + storeName, []);
+      for (const row of rows) {
+        const keys = Object.keys(row);
+        const vals = keys.map((k) => row[k]);
+        const placeholders = keys.map(() => '?').join(', ');
+        await executeWriteToOffline('INSERT INTO ' + storeName + ' (' + keys.join(', ') + ') VALUES (' + placeholders + ')', vals);
+      }
+    }
+    return;
+  }
+  for (const table of TABLE_NAMES) {
+    const rows = await dbOnline.getAllAsync('SELECT * FROM ' + table, []);
+    await dbOffline.runAsync('DELETE FROM ' + table, []);
+    for (const row of rows) {
+      const keys = Object.keys(row);
+      const placeholders = keys.map(() => '?').join(', ');
+      await dbOffline.runAsync('INSERT INTO ' + table + ' (' + keys.join(', ') + ') VALUES (' + placeholders + ')', keys.map((k) => row[k]));
+    }
+  }
+};
+
+/**
+ * Merge offline changes into online (user_reports, then full copy online → offline).
+ */
+export const mergeOfflineIntoOnline = async () => {
+  if (useWebFallback) {
+    const reports = await executeQueryToOffline('SELECT * FROM user_reports WHERE synced = 0', []);
+    for (const r of reports) {
+      await executeWriteToOnline(
+        'INSERT INTO user_reports (facility_id, facility_condition, supply_amount, population_amount, facility_importance, reported_by, synced) VALUES (?, ?, ?, ?, ?, ?, 1)',
+        [r.facility_id, r.facility_condition, r.supply_amount, r.population_amount, r.facility_importance, r.reported_by ?? 'user']
+      );
+    }
+    await copyOnlineToOffline();
+    return;
+  }
+  const reports = await dbOffline.getAllAsync('SELECT * FROM user_reports WHERE synced = 0', []);
+  for (const r of reports) {
+    await dbOnline.runAsync(
+      'INSERT INTO user_reports (facility_id, facility_condition, supply_amount, population_amount, facility_importance, reported_by, synced) VALUES (?, ?, ?, ?, ?, ?, 1)',
+      [r.facility_id, r.facility_condition, r.supply_amount, r.population_amount, r.facility_importance, r.reported_by ?? 'user']
+    );
+  }
+  await dbOffline.runAsync('UPDATE user_reports SET synced = 1', []);
+  await copyOnlineToOffline();
+}

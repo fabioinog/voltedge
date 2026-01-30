@@ -1,7 +1,11 @@
-import { executeQuery, executeWrite } from '../db/database';
+import { executeQuery, executeWrite, executeQueryToOnline, executeWriteToOnline } from '../db/database';
 import { getFacilityConnections } from './facility_connections';
 import { calculateInterventionPoints } from './intervention_ranking';
 import { calculateDistance } from './distance';
+
+/** Admin actions (simulate/resolve failure) always write to online DB so offline users do not see changes until they go online. */
+const queryForAdmin = executeQueryToOnline;
+const writeForAdmin = executeWriteToOnline;
 
 const failedFacilities = new Set();
 const atRiskFacilities = new Set();
@@ -85,7 +89,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
   try {
     let failedFacility = allFacilities.find(f => f.id === facilityId);
     if (!failedFacility) {
-      const dbFacility = await executeQuery(
+      const dbFacility = await queryForAdmin(
         'SELECT * FROM infrastructure_assets WHERE id = ?',
         [facilityId]
       );
@@ -98,7 +102,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
     
     failedFacilities.add(facilityId);
     
-    const updateResult = await executeWrite(
+    await writeForAdmin(
       `UPDATE infrastructure_assets 
        SET status = ? 
        WHERE id = ?`,
@@ -107,14 +111,14 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
     
     await new Promise(resolve => setTimeout(resolve, 200));
     
-    let verifyUpdate = await executeQuery(
+    let verifyUpdate = await queryForAdmin(
       'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
       [facilityId]
     );
     
     let attempts = 0;
     while (verifyUpdate[0] && verifyUpdate[0].status !== 'failed' && attempts < 5) {
-      await executeWrite(
+      await writeForAdmin(
         `UPDATE infrastructure_assets 
          SET status = ? 
          WHERE id = ?`,
@@ -122,7 +126,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       );
       
       await new Promise(resolve => setTimeout(resolve, 200));
-      verifyUpdate = await executeQuery(
+      verifyUpdate = await queryForAdmin(
         'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
         [facilityId]
       );
@@ -136,7 +140,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
     });
     
     for (const atRiskId of atRiskIds) {
-      const updateResult = await executeWrite(
+      await writeForAdmin(
         `UPDATE infrastructure_assets 
          SET status = ? 
          WHERE id = ? AND status != 'failed'`,
@@ -144,13 +148,13 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       );
       
       await new Promise(resolve => setTimeout(resolve, 100));
-      const verifyAtRisk = await executeQuery(
+      const verifyAtRisk = await queryForAdmin(
         'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
         [atRiskId]
       );
       
       if (verifyAtRisk[0] && verifyAtRisk[0].status !== 'at_risk') {
-        await executeWrite(
+        await writeForAdmin(
           `UPDATE infrastructure_assets 
            SET status = ? 
            WHERE id = ?`,
@@ -161,7 +165,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
     
     const failedFacilityUpdated = { ...failedFacility, status: 'failed' };
     const failedPoints = await calculateInterventionPoints(failedFacilityUpdated);
-    await executeWrite(
+    await writeForAdmin(
       `UPDATE infrastructure_assets 
        SET intervention_points = ? 
        WHERE id = ?`,
@@ -171,7 +175,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
     for (const atRiskId of atRiskIds) {
       let atRiskFacility = allFacilities.find(f => f.id === atRiskId);
       if (!atRiskFacility) {
-        const dbFacility = await executeQuery(
+        const dbFacility = await queryForAdmin(
           'SELECT * FROM infrastructure_assets WHERE id = ?',
           [atRiskId]
         );
@@ -183,7 +187,7 @@ export const simulateFacilityFailure = async (facilityId, allFacilities, connect
       if (atRiskFacility) {
         const atRiskFacilityUpdated = { ...atRiskFacility, status: 'at_risk' };
         const atRiskPoints = await calculateInterventionPoints(atRiskFacilityUpdated);
-        await executeWrite(
+        await writeForAdmin(
           `UPDATE infrastructure_assets 
            SET intervention_points = ? 
            WHERE id = ?`,
@@ -282,7 +286,7 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
     
     let facility = allFacilities.find(f => f.id === facilityId);
     if (!facility) {
-      const dbFacility = await executeQuery(
+      const dbFacility = await queryForAdmin(
         'SELECT * FROM infrastructure_assets WHERE id = ?',
         [facilityId]
       );
@@ -295,7 +299,7 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
       throw new Error(`Facility ${facilityId} not found`);
     }
     
-    const updateResult = await executeWrite(
+    await writeForAdmin(
       `UPDATE infrastructure_assets 
        SET status = ? 
        WHERE id = ?`,
@@ -304,13 +308,13 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
     
     await new Promise(resolve => setTimeout(resolve, 200));
     
-    const verifyUpdate = await executeQuery(
+    const verifyUpdate = await queryForAdmin(
       'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
       [facilityId]
     );
     
     if (verifyUpdate[0] && verifyUpdate[0].status !== 'operational') {
-      await executeWrite(
+      await writeForAdmin(
         `UPDATE infrastructure_assets 
          SET status = ? 
          WHERE id = ?`,
@@ -321,7 +325,7 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
     
     const facilityUpdated = { ...facility, status: 'operational' };
     const newPoints = await calculateInterventionPoints(facilityUpdated);
-    await executeWrite(
+    await writeForAdmin(
       `UPDATE infrastructure_assets 
        SET intervention_points = ? 
        WHERE id = ?`,
@@ -330,12 +334,12 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
     
     const MAX_RISK_DISTANCE = 50000;
     
-    const allRemainingFailed = await executeQuery(
+    const allRemainingFailed = await queryForAdmin(
       'SELECT * FROM infrastructure_assets WHERE status = ?',
       ['failed']
     );
     
-    const allAtRisk = await executeQuery(
+    const allAtRisk = await queryForAdmin(
       'SELECT * FROM infrastructure_assets WHERE status = ?',
       ['at_risk']
     );
@@ -381,7 +385,7 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
     for (const facilityToResolve of facilitiesToResolve) {
       atRiskFacilities.delete(facilityToResolve.id);
       
-      await executeWrite(
+      await writeForAdmin(
         `UPDATE infrastructure_assets 
          SET status = ? 
          WHERE id = ?`,
@@ -390,7 +394,7 @@ export const resolveFacilityFailure = async (facilityId, allFacilities) => {
       
       const resolvedFacilityUpdated = { ...facilityToResolve, status: 'operational' };
       const resolvedPoints = await calculateInterventionPoints(resolvedFacilityUpdated);
-      await executeWrite(
+      await writeForAdmin(
         `UPDATE infrastructure_assets 
          SET intervention_points = ? 
          WHERE id = ?`,

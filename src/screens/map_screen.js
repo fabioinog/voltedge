@@ -8,6 +8,8 @@ import DirectionsPanel from '../components/directions_panel';
 import SimulationJoystick from '../components/simulation_joystick';
 import { calculateInterventionPoints } from '../utils/intervention_ranking';
 import { initializeSampleData, syncFacilities, fixFacilityStatuses } from '../utils/data_sync';
+import { getConnectionMode, setConnectionMode } from '../utils/connection_state';
+import { copyOnlineToOffline, mergeOfflineIntoOnline } from '../db/database';
 import { validateUserReport, getValidationExplanation } from '../utils/report_validation';
 import { addUserPointAdjustment, clearAllUserAdjustments, getUserPointAdjustment } from '../utils/user_point_adjustments';
 import { findNearestFacility, formatDistance } from '../utils/distance';
@@ -31,9 +33,7 @@ const MapScreen = () => {
   const [showReportModal, setShowReportModal] = useState(false);
   const [showRankingList, setShowRankingList] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isOnline, setIsOnline] = useState(
-    typeof navigator !== 'undefined' ? navigator.onLine !== false : true
-  );
+  const [isOnline, setIsOnline] = useState(getConnectionMode());
   
   // GPS and navigation state - always start at Khartoum
   const [userLocation, setUserLocation] = useState({
@@ -97,7 +97,6 @@ const MapScreen = () => {
     }, 2000);
     
     init();
-    setupOnlineListener();
     
     
     return () => {
@@ -144,10 +143,21 @@ const MapScreen = () => {
     }
   }, [userLocation, navigationRoute]);
 
-  const setupOnlineListener = () => {
-    if (Platform.OS === 'web') {
-      window.addEventListener('online', () => setIsOnline(true));
-      window.addEventListener('offline', () => setIsOnline(false));
+  const handleToggleOnlineOffline = async () => {
+    try {
+      const nextOnline = !isOnline;
+      if (nextOnline) {
+        await mergeOfflineIntoOnline();
+        setConnectionMode(true);
+        setIsOnline(true);
+      } else {
+        await copyOnlineToOffline();
+        setConnectionMode(false);
+        setIsOnline(false);
+      }
+      await loadFacilities(false);
+    } catch (error) {
+      console.error('Toggle online/offline error:', error);
     }
   };
 
@@ -419,12 +429,14 @@ const MapScreen = () => {
           // Show success message
           const explanation = getValidationExplanation(validation);
           console.log('Report applied:', explanation);
-          alert(`Report validated!\n${explanation}\n\nFacility priority updated.`);
+          const offlineNote = !isOnline ? '\n\nSaved locally. Will sync when you go online.' : '';
+          alert(`Report validated!\n${explanation}\n\nFacility priority updated.${offlineNote}`);
         }
       } else {
         // Report received but not applied
         console.log('Report received but not applied:', validation.reason);
-        alert('Report received.');
+        const offlineNote = !isOnline ? ' Saved locally. Will sync when you go online.' : '';
+        alert('Report received.' + offlineNote);
       }
 
       setShowReportModal(false);
@@ -438,93 +450,35 @@ const MapScreen = () => {
     try {
       setIsSimulatingFailure(true);
       setShowFailureModal(false);
-      
-      const result = await simulateFacilityFailure(
+
+      await simulateFacilityFailure(
         facility.id,
         facilities,
         facilityConnections
       );
-      
-      setCurrentFailure(result.failedFacility);
-      
-      const failedFromResult = [result.failedFacility];
-      const atRiskFromResult = result.atRiskFacilities || [];
-      
-      setFailedFacilitiesList(failedFromResult);
-      setAtRiskFacilitiesList(atRiskFromResult);
-      
-      setFacilities(prevFacilities => {
-        const updated = prevFacilities.map(f => {
-          if (f.id === result.failedFacility.id) {
-            return { ...f, status: 'failed', intervention_points: result.failedFacility.intervention_points };
-          }
-          if (result.atRiskIds && result.atRiskIds.includes(f.id)) {
-            const atRiskFacility = result.atRiskFacilities.find(arf => arf.id === f.id);
-            if (atRiskFacility) {
-              return { ...f, status: 'at_risk', intervention_points: atRiskFacility.intervention_points };
-            }
-            return { ...f, status: 'at_risk' };
-          }
-          return f;
-        });
-        return updated;
-      });
-      
-      setTimeout(async () => {
-        try {
-          const verifyFailed = await executeQuery(
-            'SELECT * FROM infrastructure_assets WHERE id = ?',
-            [facility.id]
-          );
-          
-          if (verifyFailed[0]) {
-            if (verifyFailed[0].status === 'failed') {
-              const freshFacilities = await executeQuery('SELECT * FROM infrastructure_assets');
-              const failed = freshFacilities.filter(f => f.status === 'failed');
-              const atRisk = freshFacilities.filter(f => f.status === 'at_risk');
-              setFailedFacilitiesList(failed);
-              setAtRiskFacilitiesList(atRisk);
-              
-              setFacilities(prevFacilities => {
-                const facilityMap = new Map(freshFacilities.map(f => [f.id, f]));
-                return prevFacilities.map(f => {
-                  const updated = facilityMap.get(f.id);
-                  return updated ? { ...f, ...updated } : f;
-                });
-              });
-              
-              setTimeout(() => {
-                setIsSimulatingFailure(false);
-              }, 5000);
-            } else {
-              await executeWrite(
-                `UPDATE infrastructure_assets 
-                 SET status = ? 
-                 WHERE id = ?`,
-                ['failed', facility.id]
-              );
-              setTimeout(() => {
-                setIsSimulatingFailure(false);
-              }, 2000);
-            }
-          } else {
-            setIsSimulatingFailure(false);
-          }
-        } catch (error) {
-          console.error('Error updating failure lists:', error);
-          setTimeout(() => {
-            setIsSimulatingFailure(false);
-          }, 2000);
-        }
-      }, 1500);
+
+      if (!isOnline) {
+        loadFacilities(false);
+        setIsSimulatingFailure(false);
+        return;
+      }
+
+      await copyOnlineToOffline();
+      await loadFacilities(false);
+      setIsSimulatingFailure(false);
     } catch (error) {
       console.error('Error simulating facility failure:', error);
+      setIsSimulatingFailure(false);
       alert('Error simulating facility failure. Please try again.');
     }
   };
 
   const handleSendAlert = (facility) => {
     if (!facility) return;
+    if (!isOnline) {
+      alert("You're offline. Go online to send alerts to the team.");
+      return;
+    }
     setCurrentFailure(facility);
     setShowFailureSuggestions(true);
   };
@@ -533,52 +487,18 @@ const MapScreen = () => {
     try {
       setShowResolveFailureModal(false);
       setIsSimulatingFailure(true);
-      
-      const resolvedFacility = await resolveFacilityFailure(facility.id, facilities);
-      await new Promise(resolve => setTimeout(resolve, 300));
-      
-      const verifyResolved = await executeQuery(
-        'SELECT id, name, status FROM infrastructure_assets WHERE id = ?',
-        [facility.id]
-      );
-      
-      if (verifyResolved[0]) {
-        if (verifyResolved[0].status === 'operational') {
-        } else {
-          await executeWrite(
-            `UPDATE infrastructure_assets 
-             SET status = ? 
-             WHERE id = ?`,
-            ['operational', facility.id]
-          );
-          await new Promise(resolve => setTimeout(resolve, 200));
-        }
-      }
-      
-      await loadFacilities(false);
-      const freshFacilities = await executeQuery('SELECT * FROM infrastructure_assets');
-      const failed = freshFacilities.filter(f => f.status === 'failed');
-      const atRisk = freshFacilities.filter(f => f.status === 'at_risk');
-      
-      setFailedFacilitiesList(failed);
-      setAtRiskFacilitiesList(atRisk);
-      
-      setFacilities(prevFacilities => {
-        return prevFacilities.map(f => {
-          if (f.id === facility.id) {
-            const updatedFacility = freshFacilities.find(ff => ff.id === facility.id);
-            if (updatedFacility) {
-              return updatedFacility;
-            }
-            return { ...f, status: 'operational' };
-          }
-          return f;
-        });
-      });
-      
-      setTimeout(() => {
+
+      await resolveFacilityFailure(facility.id, facilities);
+
+      if (!isOnline) {
+        await loadFacilities(false);
         setIsSimulatingFailure(false);
-      }, 3000);
+        return;
+      }
+
+      await copyOnlineToOffline();
+      await loadFacilities(false);
+      setIsSimulatingFailure(false);
     } catch (error) {
       console.error('Error resolving facility failure:', error);
       setIsSimulatingFailure(false);
@@ -704,6 +624,14 @@ const MapScreen = () => {
         {showSimulationPanel && (
           <>
             <Pressable
+              style={[styles.onlineOfflineButton, isOnline ? styles.onlineOfflineButtonOnline : styles.onlineOfflineButtonOffline]}
+              onPress={handleToggleOnlineOffline}
+            >
+              <Text style={styles.onlineOfflineButtonText}>
+                {isOnline ? 'Go Offline' : 'Go Online'}
+              </Text>
+            </Pressable>
+            <Pressable
               style={[styles.simulationButton, isSimulating && styles.simulationButtonActive]}
               onPress={toggleSimulation}
             >
@@ -817,6 +745,7 @@ const MapScreen = () => {
           setSelectedFacility(facility);
         }}
         onSendAlert={handleSendAlert}
+        isOnline={isOnline}
       />
 
       {/* Failure Suggestions Modal */}
@@ -954,6 +883,31 @@ const styles = StyleSheet.create({
   simulationToggleArrowText: {
     color: '#ffffff',
     fontSize: 12,
+    fontWeight: 'bold',
+  },
+  onlineOfflineButton: {
+    padding: 12,
+    borderRadius: 8,
+    borderTopLeftRadius: 0,
+    borderBottomLeftRadius: 0,
+    marginRight: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
+    alignItems: 'center',
+    minWidth: 100,
+  },
+  onlineOfflineButtonOnline: {
+    backgroundColor: '#00cc00',
+  },
+  onlineOfflineButtonOffline: {
+    backgroundColor: '#666666',
+  },
+  onlineOfflineButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
     fontWeight: 'bold',
   },
   simulationButton: {

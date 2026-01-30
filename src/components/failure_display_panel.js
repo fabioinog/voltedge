@@ -6,7 +6,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
 
-const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert }) => {
+const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert, isOnline = true }) => {
   const getTypeColor = (type) => {
     switch (type) {
       case 'water':
@@ -42,11 +42,15 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
   return (
     <View style={styles.panel}>
       <Text style={styles.panelTitle}>Failure Status</Text>
-      
-      {failedFacilities.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Failed Facilities</Text>
-          <ScrollView style={styles.facilityList}>
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={true}
+        nestedScrollEnabled={true}
+      >
+        {failedFacilities.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Failed Facilities</Text>
             {failedFacilities.map((facility) => (
               <View
                 key={facility.id}
@@ -67,22 +71,26 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                   </View>
                   <Text style={styles.failedBadge}>FAILED</Text>
                 </Pressable>
-                <Pressable
-                  style={styles.alertButton}
-                  onPress={() => onSendAlert && onSendAlert(facility)}
-                >
-                  <Text style={styles.alertButtonText}>Alert Team</Text>
-                </Pressable>
+                {isOnline ? (
+                  <Pressable
+                    style={styles.alertButton}
+                    onPress={() => onSendAlert && onSendAlert(facility)}
+                  >
+                    <Text style={styles.alertButtonText}>Alert Team</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.offlineAlertMessage}>
+                    <Text style={styles.offlineAlertText}>You're offline. Go online to send alerts.</Text>
+                  </View>
+                )}
               </View>
             ))}
-          </ScrollView>
-        </View>
-      )}
+          </View>
+        )}
 
-      {atRiskFacilities.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>At Risk Facilities</Text>
-          <ScrollView style={styles.facilityList}>
+        {atRiskFacilities.length > 0 && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>At Risk Facilities</Text>
             {atRiskFacilities.map((facility) => (
               <Pressable
                 key={facility.id}
@@ -101,9 +109,9 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                 <Text style={styles.atRiskBadge}>AT RISK</Text>
               </Pressable>
             ))}
-          </ScrollView>
-        </View>
-      )}
+          </View>
+        )}
+      </ScrollView>
     </View>
   );
 };
@@ -114,7 +122,8 @@ const styles = StyleSheet.create({
     left: 10,
     top: 80,
     width: 280,
-    maxHeight: '70%',
+    height: '70%',
+    maxHeight: 560,
     backgroundColor: '#ffffff',
     borderRadius: 8,
     padding: 15,
@@ -124,27 +133,32 @@ const styles = StyleSheet.create({
     shadowRadius: 3.84,
     elevation: 5,
     zIndex: 1000,
+    overflow: 'hidden',
   },
   panelTitle: {
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333333',
-    marginBottom: 15,
+    marginBottom: 10,
     borderBottomWidth: 2,
     borderBottomColor: '#cc0000',
     paddingBottom: 8,
   },
+  scrollArea: {
+    flex: 1,
+    minHeight: 0,
+  },
+  scrollContent: {
+    paddingBottom: 16,
+  },
   section: {
-    marginBottom: 20,
+    marginBottom: 16,
   },
   sectionTitle: {
     fontSize: 14,
     fontWeight: '600',
     color: '#666666',
-    marginBottom: 10,
-  },
-  facilityList: {
-    maxHeight: 300,
+    marginBottom: 8,
   },
   facilityItem: {
     marginBottom: 8,
@@ -211,6 +225,18 @@ const styles = StyleSheet.create({
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '600',
+  },
+  offlineAlertMessage: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#e0e0e0',
+    backgroundColor: '#f5f5f5',
+  },
+  offlineAlertText: {
+    color: '#666666',
+    fontSize: 12,
+    fontStyle: 'italic',
   },
 });
 

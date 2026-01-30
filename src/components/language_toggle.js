@@ -6,6 +6,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable } from 'react-native';
 import { useLanguage } from '../contexts/language_context';
+import { ACCENT_BLUE, transitionStyle } from '../theme';
 
 /**
  * Language Toggle Component
@@ -64,7 +65,7 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   toggleActive: {
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
   },
   text: {
     fontSize: 12,

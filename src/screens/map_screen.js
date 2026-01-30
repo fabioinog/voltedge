@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
+import { ACCENT_BLUE, ACCENT_BLUE_LIGHT, transitionStyle } from '../theme';
 import { executeQuery, executeWrite, initDatabase } from '../db/database';
 import MapComponent from '../components/map_component';
 import FacilityReportModal from '../components/facility_report_modal';
@@ -349,9 +350,21 @@ const MapScreen = () => {
   const handleJoystickStop = () => {
   };
 
-  const handleFacilityClick = (facility) => {
+  const handleFacilityClick = useCallback((facility) => {
     setSelectedFacility(facility);
-  };
+  }, []);
+
+  // Stable props for MapComponent so it only re-renders when map data actually changes
+  // (avoids map zoom/position reset on facility click or other UI-only state changes)
+  const mapFacilities = useMemo(() => facilities || [], [facilities]);
+  const mapConnections = useMemo(
+    () => (Array.isArray(facilityConnections) ? facilityConnections : []),
+    [facilityConnections]
+  );
+  const mapTopPriorityFacilities = useMemo(
+    () => (Array.isArray(facilities) ? facilities.slice(0, 3) : []),
+    [facilities]
+  );
 
   const handleReportProblem = () => {
     setShowReportModal(true);
@@ -509,7 +522,7 @@ const MapScreen = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0066cc" />
+        <ActivityIndicator size="large" color={ACCENT_BLUE} />
         <Text style={styles.loadingText}>Loading map...</Text>
         <Text style={styles.loadingSubtext}>
           Initializing database and loading facilities...
@@ -524,13 +537,13 @@ const MapScreen = () => {
         <MapComponent
           center={SUDAN_CENTER}
           zoom={SUDAN_ZOOM}
-          facilities={facilities || []}
+          facilities={mapFacilities}
           userLocation={userLocation}
           route={navigationRoute}
           onFacilityClick={handleFacilityClick}
           isSimulating={isSimulating}
-          connections={Array.isArray(facilityConnections) ? facilityConnections : []}
-          topPriorityFacilities={Array.isArray(facilities) ? facilities.slice(0, 3) : []}
+          connections={mapConnections}
+          topPriorityFacilities={mapTopPriorityFacilities}
         />
       </View>
       
@@ -571,7 +584,7 @@ const MapScreen = () => {
               </Text>
 
               <Pressable
-                style={styles.navigateButton}
+                style={({ pressed }) => [styles.navigateButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
                 onPress={() => {
                   startNavigation(selectedFacility);
                   setSelectedFacility(null);
@@ -581,14 +594,14 @@ const MapScreen = () => {
               </Pressable>
 
               <Pressable
-                style={styles.reportButton}
+                style={({ pressed }) => [styles.reportButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
                 onPress={handleReportProblem}
               >
                 <Text style={styles.reportButtonText}>Report Problem</Text>
               </Pressable>
 
               <Pressable
-                style={styles.closeButton}
+                style={({ pressed }) => [styles.closeButton, transitionStyle, { opacity: pressed ? 0.85 : 1 }]}
                 onPress={() => setSelectedFacility(null)}
               >
                 <Text style={styles.closeButtonText}>Close</Text>
@@ -612,7 +625,7 @@ const MapScreen = () => {
       <View style={styles.simulationPanel}>
         {/* Arrow Toggle Button */}
         <Pressable
-          style={styles.simulationToggleArrow}
+          style={({ pressed }) => [styles.simulationToggleArrow, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
           onPress={() => setShowSimulationPanel(!showSimulationPanel)}
         >
           <Text style={styles.simulationToggleArrowText}>
@@ -624,7 +637,12 @@ const MapScreen = () => {
         {showSimulationPanel && (
           <>
             <Pressable
-              style={[styles.onlineOfflineButton, isOnline ? styles.onlineOfflineButtonOnline : styles.onlineOfflineButtonOffline]}
+              style={({ pressed }) => [
+                styles.onlineOfflineButton,
+                isOnline ? styles.onlineOfflineButtonOnline : styles.onlineOfflineButtonOffline,
+                transitionStyle,
+                { opacity: pressed ? 0.9 : 1 },
+              ]}
               onPress={handleToggleOnlineOffline}
             >
               <Text style={styles.onlineOfflineButtonText}>
@@ -632,7 +650,12 @@ const MapScreen = () => {
               </Text>
             </Pressable>
             <Pressable
-              style={[styles.simulationButton, isSimulating && styles.simulationButtonActive]}
+              style={({ pressed }) => [
+                styles.simulationButton,
+                isSimulating && styles.simulationButtonActive,
+                transitionStyle,
+                { opacity: pressed ? 0.9 : 1 },
+              ]}
               onPress={toggleSimulation}
             >
               <Text style={[styles.simulationButtonText, isSimulating && styles.simulationButtonTextActive]}>
@@ -649,7 +672,7 @@ const MapScreen = () => {
             {/* Resolve Failure Button */}
             {failedFacilitiesList.length > 0 && (
               <Pressable
-                style={styles.resolveFailureButton}
+                style={({ pressed }) => [styles.resolveFailureButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
                 onPress={() => setShowResolveFailureModal(true)}
               >
                 <Text style={styles.resolveFailureButtonText}>Resolve Failure</Text>
@@ -661,7 +684,7 @@ const MapScreen = () => {
 
       {/* Guide Button */}
       <Pressable
-        style={styles.guideButton}
+        style={({ pressed }) => [styles.guideButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
         onPress={() => setShowGuideModal(true)}
       >
         <Text style={styles.guideButtonText}>?</Text>
@@ -669,7 +692,7 @@ const MapScreen = () => {
 
       {/* Intervention Ranking Toggle */}
       <Pressable
-        style={styles.rankingButton}
+        style={({ pressed }) => [styles.rankingButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
         onPress={() => setShowRankingList(!showRankingList)}
       >
         <Text style={styles.rankingButtonText}>
@@ -703,7 +726,7 @@ const MapScreen = () => {
             {formatDistance(nearestFacility.distance)} away
           </Text>
           <Pressable
-            style={styles.nearestFacilityButton}
+            style={({ pressed }) => [styles.nearestFacilityButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
             onPress={() => startNavigation(nearestFacility.facility)}
           >
             <Text style={styles.nearestFacilityButtonText}>Navigate</Text>
@@ -792,7 +815,7 @@ const styles = StyleSheet.create({
     height: '100%',
     minHeight: 400,
     position: 'relative',
-    backgroundColor: '#e8f4f8', // Light blue background to verify rendering
+    backgroundColor: ACCENT_BLUE_LIGHT,
   },
   loadingContainer: {
     flex: 1,
@@ -828,14 +851,16 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 8,
+    textAlign: 'left',
   },
   modalSubtitle: {
     fontSize: 16,
     color: '#666666',
     marginBottom: 4,
+    textAlign: 'left',
   },
   reportButton: {
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
@@ -900,7 +925,7 @@ const styles = StyleSheet.create({
     minWidth: 100,
   },
   onlineOfflineButtonOnline: {
-    backgroundColor: '#00cc00',
+    backgroundColor: ACCENT_BLUE,
   },
   onlineOfflineButtonOffline: {
     backgroundColor: '#666666',
@@ -926,7 +951,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ff9900',
   },
   simulationButtonText: {
-    color: '#0066cc',
+    color: ACCENT_BLUE,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -967,7 +992,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   rankingButtonText: {
-    color: '#0066cc',
+    color: ACCENT_BLUE,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -1001,20 +1026,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: '#666666',
     marginBottom: 4,
+    textAlign: 'left',
   },
   nearestFacilityName: {
     fontSize: 16,
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 4,
+    textAlign: 'left',
   },
   nearestFacilityDistance: {
     fontSize: 14,
-    color: '#0066cc',
+    color: ACCENT_BLUE,
     marginBottom: 8,
+    textAlign: 'left',
   },
   nearestFacilityButton: {
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     padding: 8,
     borderRadius: 4,
     alignItems: 'center',
@@ -1033,7 +1061,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
   },
   online: {
-    backgroundColor: '#e8f5e9',
+    backgroundColor: ACCENT_BLUE_LIGHT,
   },
   offline: {
     backgroundColor: '#ffebee',
@@ -1042,6 +1070,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: 'bold',
     color: '#333333',
+    textAlign: 'left',
   },
   debugInfo: {
     position: 'absolute',
@@ -1088,10 +1117,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#333333',
     marginBottom: 8,
+    textAlign: 'center',
   },
   emptyStateSubtext: {
     fontSize: 12,
     color: '#666666',
+    textAlign: 'center',
   },
   guideButton: {
     position: 'absolute',
@@ -1100,7 +1131,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',

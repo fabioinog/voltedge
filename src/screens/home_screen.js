@@ -4,15 +4,17 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, ActivityIndicator, Pressable, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { executeQuery } from '../db/database';
+import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
 
 /**
  * Home Screen Component
  */
 const HomeScreen = () => {
   const navigation = useNavigation();
+  const [mapButtonHovered, setMapButtonHovered] = useState(false);
   // Translation helper - returns English text directly
   const t = (key) => {
     const translations = {
@@ -96,7 +98,7 @@ const HomeScreen = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#0066cc" />
+        <ActivityIndicator size="large" color={ACCENT_BLUE} />
         <Text style={styles.loadingText}>{t('loading')}</Text>
       </View>
     );
@@ -140,8 +142,15 @@ const HomeScreen = () => {
       </View>
 
       <Pressable
-        style={styles.mapButton}
+        style={({ pressed }) => [
+          styles.mapButton,
+          transitionStyle,
+          mapButtonHovered && Platform.OS === 'web' && styles.mapButtonHover,
+          { opacity: pressed ? 0.9 : 1 },
+        ]}
         onPress={() => navigation.navigate('Map')}
+        onMouseEnter={() => Platform.OS === 'web' && setMapButtonHovered(true)}
+        onMouseLeave={() => Platform.OS === 'web' && setMapButtonHovered(false)}
       >
         <Text style={styles.mapButtonText}>{t('viewMap')}</Text>
       </Pressable>
@@ -200,10 +209,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 8,
+    textAlign: 'left',
   },
   subtitle: {
     fontSize: 16,
     color: '#666666',
+    textAlign: 'left',
   },
   statsGrid: {
     flexDirection: 'row',
@@ -234,7 +245,7 @@ const styles = StyleSheet.create({
   },
   statCardInterventions: {
     borderLeftWidth: 4,
-    borderLeftColor: '#0066cc',
+    borderLeftColor: ACCENT_BLUE,
   },
   statValue: {
     fontSize: 32,
@@ -249,7 +260,7 @@ const styles = StyleSheet.create({
     color: '#ff9900',
   },
   statValueInterventions: {
-    color: '#0066cc',
+    color: ACCENT_BLUE,
   },
   statLabel: {
     fontSize: 14,
@@ -257,7 +268,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   mapButton: {
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     padding: 16,
     borderRadius: 8,
     marginBottom: 24,
@@ -267,6 +278,9 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.2,
     shadowRadius: 4,
     elevation: 4,
+  },
+  mapButtonHover: {
+    backgroundColor: ACCENT_BLUE_HOVER,
   },
   mapButtonText: {
     color: '#ffffff',
@@ -288,6 +302,7 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 12,
+    textAlign: 'left',
   },
   capabilityList: {
     gap: 8,
@@ -296,6 +311,7 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: '#666666',
     lineHeight: 24,
+    textAlign: 'left',
   },
 });
 

@@ -3,8 +3,9 @@
  * Button to trigger facility failure simulation (admin panel)
  */
 
-import React, { useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React from 'react';
+import { Text, Pressable, StyleSheet } from 'react-native';
+import { transitionStyle } from '../theme';
 
 const FailureSimulationButton = ({ onPress, isVisible }) => {
   if (!isVisible) {
@@ -13,7 +14,7 @@ const FailureSimulationButton = ({ onPress, isVisible }) => {
 
   return (
     <Pressable
-      style={styles.button}
+      style={({ pressed }) => [styles.button, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
       onPress={onPress}
     >
       <Text style={styles.buttonText}>Simulate Failure</Text>
@@ -23,7 +24,7 @@ const FailureSimulationButton = ({ onPress, isVisible }) => {
 
 const styles = StyleSheet.create({
   button: {
-    backgroundColor: '#cc0000',
+    backgroundColor: '#b71c1c',
     paddingVertical: 10,
     paddingHorizontal: 15,
     borderRadius: 5,

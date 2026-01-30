@@ -1,5 +1,6 @@
 import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { ACCENT_BLUE, transitionStyle } from '../theme';
 
 const GuideModal = ({ visible, onClose }) => {
   return (
@@ -13,7 +14,10 @@ const GuideModal = ({ visible, onClose }) => {
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>VoltEdge User Guide</Text>
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [styles.closeButton, transitionStyle, { opacity: pressed ? 0.7 : 1 }]}
+            >
               <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
@@ -171,7 +175,8 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#0066cc',
+    color: ACCENT_BLUE,
+    textAlign: 'left',
   },
   closeButton: {
     width: 32,
@@ -197,12 +202,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 12,
+    textAlign: 'left',
   },
   sectionText: {
     fontSize: 14,
     color: '#666666',
     marginBottom: 12,
     lineHeight: 20,
+    textAlign: 'left',
   },
   bulletPoint: {
     flexDirection: 'row',
@@ -211,7 +218,7 @@ const styles = StyleSheet.create({
   },
   bullet: {
     fontSize: 16,
-    color: '#0066cc',
+    color: ACCENT_BLUE,
     marginRight: 8,
     width: 20,
   },
@@ -220,10 +227,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333333',
     lineHeight: 20,
+    textAlign: 'left',
   },
   bold: {
     fontWeight: 'bold',
-    color: '#0066cc',
+    color: ACCENT_BLUE,
   },
 });
 

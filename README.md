@@ -64,12 +64,24 @@ The app will open at `http://localhost:8081` (or the next available port).
 
 ## Technology Stack
 
-- Expo SDK 51.0.0: Cross-platform development framework
-- React 18.2.0: UI library
-- React Native 0.74.5: Mobile framework
-- expo-sqlite ~14.0.6: SQLite database for offline storage
-- Leaflet ^1.9.4: Interactive maps
-- React-Leaflet ^4.2.1: React components for Leaflet
+**Runtime**
+- **Expo** ~51.0.0 – Cross-platform framework (web, Android, iOS)
+- **React** 18.2.0 & **React DOM** 18.2.0 – UI
+- **React Native** 0.74.5 & **react-native-web** ~0.19.10 – Mobile and web
+- **expo-sqlite** ~14.0.6 – Local SQLite (IndexedDB fallback on web)
+- **expo-status-bar** ~1.12.1 – Status bar styling
+- **React Navigation** (@react-navigation/native ^6.1.9, native-stack ^6.9.17) – Navigation
+- **react-native-screens** ~3.31.1, **react-native-safe-area-context** 4.10.5 – Native screens and safe areas
+- **Leaflet** ^1.9.4 & **react-leaflet** ^4.2.1 – Maps (web)
+- **@expo/metro-runtime** ~3.2.3 – Metro bundler runtime
+
+**Development**
+- **Jest** ^29.7.0 & **@testing-library/react-native** ^12.4.3 – Tests
+- **ESLint** ^8.57.0 & **eslint-config-expo** ^7.1.2 – Linting
+- **Prettier** ^3.2.5 – Formatting
+- **TypeScript** ~5.3.3 & **@types/react** ~18.2.45 – Types
+- **Babel** (@babel/core ^7.24.0) – Transpilation
+- **pngjs** ^7.0.0 – Asset handling (scripts)
 
 ## Simulated API
 

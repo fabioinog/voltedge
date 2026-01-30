@@ -5,6 +5,7 @@
 
 import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, ScrollView } from 'react-native';
+import { ACCENT_BLUE, transitionStyle } from '../theme';
 
 const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) => {
   if (!visible || !facility || !suggestions) {
@@ -37,7 +38,10 @@ const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) =>
               <Text style={styles.modalTitle}>Recommended Actions</Text>
               <Text style={styles.modalSubtitle}>{facility.name}</Text>
             </View>
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [styles.closeButton, transitionStyle, { opacity: pressed ? 0.7 : 1 }]}
+            >
               <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
@@ -52,7 +56,7 @@ const FailureSuggestionsModal = ({ visible, facility, suggestions, onClose }) =>
           </ScrollView>
 
           <Pressable
-            style={styles.closeButtonLarge}
+            style={({ pressed }) => [styles.closeButtonLarge, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
             onPress={onClose}
           >
             <Text style={styles.closeButtonLargeText}>Close</Text>
@@ -83,7 +87,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 20,
     borderBottomWidth: 2,
-    borderBottomColor: '#cc0000',
+    borderBottomColor: ACCENT_BLUE,
     paddingBottom: 15,
   },
   modalIcon: {
@@ -98,10 +102,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 4,
+    textAlign: 'left',
   },
   modalSubtitle: {
     fontSize: 14,
     color: '#666666',
+    textAlign: 'left',
   },
   closeButton: {
     width: 30,
@@ -130,7 +136,7 @@ const styles = StyleSheet.create({
   suggestionNumber: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#cc0000',
+    color: ACCENT_BLUE,
     marginRight: 12,
     minWidth: 24,
   },
@@ -139,9 +145,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333333',
     lineHeight: 20,
+    textAlign: 'left',
   },
   closeButtonLarge: {
-    backgroundColor: '#cc0000',
+    backgroundColor: ACCENT_BLUE,
     paddingVertical: 12,
     paddingHorizontal: 20,
     borderRadius: 5,

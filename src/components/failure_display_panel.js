@@ -3,14 +3,16 @@
  * Shows failed and at-risk facilities on the left side of the screen
  */
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
+import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
 
 const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityClick, onSendAlert, isOnline = true }) => {
+  const [hoveredAlertId, setHoveredAlertId] = useState(null);
   const getTypeColor = (type) => {
     switch (type) {
       case 'water':
-        return '#0066cc';
+        return ACCENT_BLUE;
       case 'power':
         return '#ff9900';
       case 'shelter':
@@ -61,7 +63,7 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                 ]}
               >
                 <Pressable
-                  style={styles.facilityContent}
+                  style={({ pressed }) => [styles.facilityContent, transitionStyle, { opacity: pressed ? 0.85 : 1 }]}
                   onPress={() => onFacilityClick(facility)}
                 >
                   <Text style={styles.facilityIcon}>{getTypeIcon(facility.type)}</Text>
@@ -73,8 +75,15 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
                 </Pressable>
                 {isOnline ? (
                   <Pressable
-                    style={styles.alertButton}
+                    style={({ pressed }) => [
+                      styles.alertButton,
+                      transitionStyle,
+                      hoveredAlertId === facility.id && Platform.OS === 'web' && styles.alertButtonHover,
+                      { opacity: pressed ? 0.9 : 1 },
+                    ]}
                     onPress={() => onSendAlert && onSendAlert(facility)}
+                    onMouseEnter={() => Platform.OS === 'web' && setHoveredAlertId(facility.id)}
+                    onMouseLeave={() => Platform.OS === 'web' && setHoveredAlertId(null)}
                   >
                     <Text style={styles.alertButtonText}>Alert Team</Text>
                   </Pressable>
@@ -94,10 +103,12 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
             {atRiskFacilities.map((facility) => (
               <Pressable
                 key={facility.id}
-                style={[
+                style={({ pressed }) => [
                   styles.facilityItem,
                   styles.atRiskItem,
                   { borderLeftColor: getTypeColor(facility.type) },
+                  transitionStyle,
+                  { opacity: pressed ? 0.85 : 1 },
                 ]}
                 onPress={() => onFacilityClick(facility)}
               >
@@ -141,8 +152,9 @@ const styles = StyleSheet.create({
     color: '#333333',
     marginBottom: 10,
     borderBottomWidth: 2,
-    borderBottomColor: '#cc0000',
+    borderBottomColor: ACCENT_BLUE,
     paddingBottom: 8,
+    textAlign: 'left',
   },
   scrollArea: {
     flex: 1,
@@ -159,6 +171,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#666666',
     marginBottom: 8,
+    textAlign: 'left',
   },
   facilityItem: {
     marginBottom: 8,
@@ -166,11 +179,14 @@ const styles = StyleSheet.create({
     borderRadius: 5,
     borderLeftWidth: 4,
     overflow: 'hidden',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
   facilityContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: 12,
+    paddingVertical: 2,
+    paddingHorizontal: 0,
   },
   failedItem: {
     backgroundColor: '#ffe6e6',
@@ -190,10 +206,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
     marginBottom: 2,
+    textAlign: 'left',
   },
   facilityType: {
     fontSize: 11,
     color: '#666666',
+    textAlign: 'left',
   },
   failedBadge: {
     fontSize: 10,
@@ -214,12 +232,15 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   alertButton: {
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     paddingVertical: 8,
     paddingHorizontal: 12,
     alignItems: 'center',
     borderTopWidth: 1,
     borderTopColor: '#e0e0e0',
+  },
+  alertButtonHover: {
+    backgroundColor: ACCENT_BLUE_HOVER,
   },
   alertButtonText: {
     color: '#ffffff',
@@ -237,6 +258,7 @@ const styles = StyleSheet.create({
     color: '#666666',
     fontSize: 12,
     fontStyle: 'italic',
+    textAlign: 'left',
   },
 });
 

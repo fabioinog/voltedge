@@ -11,8 +11,8 @@ import {
   StyleSheet,
   Pressable,
   ScrollView,
-  TextInput,
 } from 'react-native';
+import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
 /**
  * Facility Report Modal Component
  */
@@ -102,9 +102,11 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
                 {conditionOptions.map((option) => (
                   <Pressable
                     key={option.value}
-                    style={[
+                    style={({ pressed }) => [
                       styles.optionButton,
                       facilityCondition === option.value && styles.optionButtonSelected,
+                      transitionStyle,
+                      { opacity: pressed ? 0.9 : 1 },
                     ]}
                     onPress={() => setFacilityCondition(option.value)}
                   >
@@ -205,10 +207,16 @@ const FacilityReportModal = ({ visible, facility, onClose, onSubmit }) => {
           </ScrollView>
 
           <View style={styles.buttonContainer}>
-            <Pressable style={styles.cancelButton} onPress={onClose}>
+            <Pressable
+              style={({ pressed }) => [styles.cancelButton, transitionStyle, { opacity: pressed ? 0.85 : 1 }]}
+              onPress={onClose}
+            >
               <Text style={styles.cancelButtonText}>{t('cancel')}</Text>
             </Pressable>
-            <Pressable style={styles.submitButton} onPress={handleSubmit}>
+            <Pressable
+              style={({ pressed }) => [styles.submitButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+              onPress={handleSubmit}
+            >
               <Text style={styles.submitButtonText}>{t('submitReport')}</Text>
             </Pressable>
           </View>
@@ -236,11 +244,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 4,
+    textAlign: 'left',
   },
   subtitle: {
     fontSize: 16,
     color: '#666666',
     marginBottom: 24,
+    textAlign: 'left',
   },
   scrollView: {
     maxHeight: 400,
@@ -253,6 +263,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
     marginBottom: 12,
+    textAlign: 'left',
   },
   optionsContainer: {
     flexDirection: 'row',
@@ -268,8 +279,8 @@ const styles = StyleSheet.create({
     borderColor: 'transparent',
   },
   optionButtonSelected: {
-    backgroundColor: '#0066cc',
-    borderColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
+    borderColor: ACCENT_BLUE,
   },
   optionText: {
     fontSize: 14,
@@ -300,7 +311,7 @@ const styles = StyleSheet.create({
     flex: 1,
     padding: 16,
     borderRadius: 8,
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     alignItems: 'center',
   },
   submitButtonText: {

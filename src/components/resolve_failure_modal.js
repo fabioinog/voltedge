@@ -5,12 +5,13 @@
 
 import React from 'react';
 import { View, Text, Modal, Pressable, StyleSheet, FlatList } from 'react-native';
+import { ACCENT_BLUE, transitionStyle } from '../theme';
 
 const ResolveFailureModal = ({ visible, failedFacilities, onClose, onResolveFacility }) => {
   const getTypeColor = (type) => {
     switch (type) {
       case 'water':
-        return '#0066cc';
+        return ACCENT_BLUE;
       case 'power':
         return '#ff9900';
       case 'shelter':
@@ -37,7 +38,12 @@ const ResolveFailureModal = ({ visible, failedFacilities, onClose, onResolveFaci
 
   const renderFacility = ({ item }) => (
     <Pressable
-      style={[styles.facilityItem, { borderLeftColor: getTypeColor(item.type) }]}
+      style={({ pressed }) => [
+        styles.facilityItem,
+        { borderLeftColor: getTypeColor(item.type) },
+        transitionStyle,
+        { opacity: pressed ? 0.85 : 1 },
+      ]}
       onPress={() => onResolveFacility(item)}
     >
       <View style={styles.facilityHeader}>
@@ -62,7 +68,10 @@ const ResolveFailureModal = ({ visible, failedFacilities, onClose, onResolveFaci
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>Resolve Facility Failure</Text>
-            <Pressable onPress={onClose} style={styles.closeButton}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [styles.closeButton, transitionStyle, { opacity: pressed ? 0.7 : 1 }]}
+            >
               <Text style={styles.closeButtonText}>✕</Text>
             </Pressable>
           </View>
@@ -110,6 +119,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: 'bold',
     color: '#333333',
+    textAlign: 'left',
   },
   closeButton: {
     width: 30,
@@ -153,10 +163,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
     marginBottom: 2,
+    textAlign: 'left',
   },
   facilityType: {
     fontSize: 12,
     color: '#666666',
+    textAlign: 'left',
   },
   resolveButton: {
     fontSize: 12,
@@ -174,6 +186,7 @@ const styles = StyleSheet.create({
   emptyText: {
     fontSize: 14,
     color: '#999999',
+    textAlign: 'center',
   },
 });
 

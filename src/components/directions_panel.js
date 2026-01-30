@@ -3,9 +3,10 @@
  * Shows turn-by-turn directions to selected facility
  */
 
-import React from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable } from 'react-native';
+import React, { useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, Platform } from 'react-native';
 import { formatDistance } from '../utils/distance';
+import { ACCENT_BLUE, ACCENT_BLUE_HOVER, ACCENT_BLUE_LIGHT, transitionStyle } from '../theme';
 
 /**
  * Directions Panel Component
@@ -19,7 +20,10 @@ const DirectionsPanel = ({ route, currentInstruction, onClose }) => {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Directions</Text>
-        <Pressable onPress={onClose} style={styles.closeButton}>
+        <Pressable
+          onPress={onClose}
+          style={({ pressed }) => [styles.closeButton, transitionStyle, { opacity: pressed ? 0.7 : 1 }]}
+        >
           <Text style={styles.closeButtonText}>✕</Text>
         </Pressable>
       </View>
@@ -88,6 +92,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
     color: '#333333',
+    textAlign: 'left',
   },
   closeButton: {
     padding: 4,
@@ -100,12 +105,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-around',
     padding: 12,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: ACCENT_BLUE_LIGHT,
   },
   summaryText: {
     fontSize: 14,
     fontWeight: '600',
-    color: '#0066cc',
+    color: ACCENT_BLUE,
+    textAlign: 'center',
   },
   instructionsList: {
     maxHeight: 300,
@@ -117,13 +123,13 @@ const styles = StyleSheet.create({
     borderBottomColor: '#f0f0f0',
   },
   instructionItemActive: {
-    backgroundColor: '#e3f2fd',
+    backgroundColor: ACCENT_BLUE_LIGHT,
   },
   stepNumber: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
@@ -140,14 +146,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#333333',
     marginBottom: 4,
+    textAlign: 'left',
   },
   instructionTextActive: {
     fontWeight: '600',
-    color: '#0066cc',
+    color: ACCENT_BLUE,
   },
   instructionDistance: {
     fontSize: 12,
     color: '#666666',
+    textAlign: 'left',
   },
 });
 

@@ -4,6 +4,8 @@
 
 import React from 'react';
 import { View, Text, StyleSheet, FlatList, Pressable } from 'react-native';
+import { ACCENT_BLUE, transitionStyle } from '../theme';
+
 /**
  * Intervention Ranking List Component
  */
@@ -29,7 +31,7 @@ const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
   const getTypeColor = (type) => {
     switch (type) {
       case 'water':
-        return '#0066cc';
+        return ACCENT_BLUE;
       case 'power':
         return '#ff9900';
       case 'shelter':
@@ -43,12 +45,19 @@ const InterventionRankingList = ({ facilities, onFacilitySelect }) => {
     }
   };
 
+  const isFailed = (facility) => facility.status === 'failed';
+
   const renderFacility = ({ item, index }) => (
     <Pressable
-      style={styles.facilityItem}
+      style={({ pressed }) => [
+        styles.facilityItem,
+        isFailed(item) && styles.facilityItemFailed,
+        transitionStyle,
+        { opacity: pressed ? 0.85 : 1 },
+      ]}
       onPress={() => onFacilitySelect(item)}
     >
-      <View style={styles.rankBadge}>
+      <View style={[styles.rankBadge, isFailed(item) && styles.rankBadgeFailed]}>
         <Text style={styles.rankNumber}>{index + 1}</Text>
       </View>
       <View style={styles.facilityInfo}>
@@ -95,7 +104,8 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
-    elevation: 8,
+    elevation: 12,
+    zIndex: 1100,
   },
   header: {
     padding: 16,
@@ -107,10 +117,12 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#333333',
     marginBottom: 4,
+    textAlign: 'left',
   },
   headerSubtitle: {
     fontSize: 14,
     color: '#666666',
+    textAlign: 'left',
   },
   list: {
     flex: 1,
@@ -126,14 +138,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     backgroundColor: '#f9f9f9',
   },
+  facilityItemFailed: {
+    backgroundColor: '#ffe6e6',
+  },
   rankBadge: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: '#0066cc',
+    backgroundColor: ACCENT_BLUE,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 12,
+  },
+  rankBadgeFailed: {
+    backgroundColor: '#cc0000',
   },
   rankNumber: {
     color: '#ffffff',
@@ -148,10 +166,12 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#333333',
     marginBottom: 2,
+    textAlign: 'left',
   },
   facilityType: {
     fontSize: 12,
     color: '#666666',
+    textAlign: 'left',
   },
   typeIndicator: {
     width: 8,
@@ -165,11 +185,12 @@ const styles = StyleSheet.create({
   pointsValue: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#0066cc',
+    color: ACCENT_BLUE,
   },
   pointsLabel: {
     fontSize: 10,
     color: '#666666',
+    textAlign: 'right',
   },
 });
 

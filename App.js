@@ -161,8 +161,7 @@ const App = () => {
           name="SignIn"
           component={SignInScreen}
           options={{
-            title: 'VoltEdge',
-            headerShown: true,
+            headerShown: false,
           }}
         />
         <Stack.Screen

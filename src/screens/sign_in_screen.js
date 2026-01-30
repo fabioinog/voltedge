@@ -7,7 +7,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, Pressable, Platform } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { ACCENT_BLUE, ACCENT_BLUE_HOVER, transitionStyle } from '../theme';
+import { ACCENT_BLUE, transitionStyle } from '../theme';
 import { setStoredUserRole } from '../utils/auth_storage';
 
 const ROLES = {
@@ -25,30 +25,30 @@ const SignInScreen = () => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>VoltEdge</Text>
-      <Text style={styles.subtitle}>Sign in to continue</Text>
+      <View style={styles.header}>
+        <Text style={styles.title}>VoltEdge</Text>
+        <Text style={styles.subtitle}>Choose your role to continue</Text>
+      </View>
       <View style={styles.buttonGroup}>
         <Pressable
           style={({ pressed }) => [
             styles.roleButton,
             transitionStyle,
-            { opacity: pressed ? 0.9 : 1 },
+            pressed && styles.roleButtonPressed,
           ]}
           onPress={() => handleSelectRole('control_center')}
         >
           <Text style={styles.roleButtonText}>{ROLES.control_center}</Text>
-          <Text style={styles.roleButtonHint}>Full map, admin panel, all features</Text>
         </Pressable>
         <Pressable
           style={({ pressed }) => [
             styles.roleButton,
             transitionStyle,
-            { opacity: pressed ? 0.9 : 1 },
+            pressed && styles.roleButtonPressed,
           ]}
           onPress={() => handleSelectRole('khartoum_response_team')}
         >
           <Text style={styles.roleButtonText}>{ROLES.khartoum_response_team}</Text>
-          <Text style={styles.roleButtonHint}>Khartoum failures only, issue resolution</Text>
         </Pressable>
       </View>
     </View>
@@ -60,47 +60,52 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: '#f8f9fa',
     padding: 24,
   },
+  header: {
+    marginBottom: 40,
+    alignItems: 'center',
+    paddingBottom: 20,
+    borderBottomWidth: 1,
+    borderBottomColor: '#e5e7eb',
+  },
   title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#333333',
-    marginBottom: 8,
+    fontSize: 36,
+    fontWeight: '700',
+    color: '#1a1a1a',
+    letterSpacing: -0.5,
+    marginBottom: 6,
   },
   subtitle: {
-    fontSize: 16,
-    color: '#666666',
-    marginBottom: 32,
+    fontSize: 15,
+    color: '#6b7280',
   },
   buttonGroup: {
     width: '100%',
-    maxWidth: 360,
+    maxWidth: 340,
   },
   roleButton: {
     backgroundColor: '#ffffff',
-    paddingVertical: 20,
-    paddingHorizontal: 24,
-    borderRadius: 8,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: ACCENT_BLUE,
+    paddingVertical: 18,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.15,
-    shadowRadius: 2,
+    shadowOpacity: 0.06,
+    shadowRadius: 3,
     elevation: 2,
   },
+  roleButtonPressed: {
+    opacity: 0.92,
+  },
   roleButtonText: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: '600',
     color: ACCENT_BLUE,
-    marginBottom: 6,
-  },
-  roleButtonHint: {
-    fontSize: 13,
-    color: '#666666',
   },
 });
 

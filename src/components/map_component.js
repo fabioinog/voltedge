@@ -55,6 +55,57 @@ const getMarkerColor = (type) => {
   }
 };
 
+/**
+ * Build Leaflet map HTML for WebView (Android/iOS). Injects map data and uses postMessage for marker clicks.
+ */
+const buildLeafletMapHtml = (center, zoom, facilities, userLocation) => {
+  const data = {
+    center: center || [15.5, 30],
+    zoom: zoom || 6,
+    facilities: (facilities || []).map((f) => ({
+      id: f.id,
+      name: f.name,
+      lat: f.location_lat,
+      lng: f.location_lng,
+      type: f.type,
+      status: f.status,
+    })),
+    userLocation: userLocation ? { lat: userLocation.lat, lng: userLocation.lng } : null,
+  };
+  const dataStr = JSON.stringify(data).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>body{margin:0;padding:0;} #map{width:100%;height:100vh;}</style>
+</head>
+<body>
+  <div id="map"></div>
+  <script>
+    var __MAP_DATA__ = ${dataStr};
+    var data = typeof __MAP_DATA__ === 'string' ? JSON.parse(__MAP_DATA__) : __MAP_DATA__;
+    var map = L.map('map').setView(data.center, data.zoom);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
+    function getColor(t) { var c = { water: '#0066cc', power: '#ff9900', shelter: '#cc0000', food: '#00cc00', hospital: '#cc00cc' }; return c[t] || '#666666'; }
+    data.facilities.forEach(function(f) {
+      var isFailed = f.status === 'failed';
+      var color = isFailed ? '#cc0000' : getColor(f.type);
+      var marker = L.circleMarker([f.lat, f.lng], { radius: 10, fillColor: color, color: '#fff', weight: 2, fillOpacity: 1 }).addTo(map);
+      marker.facilityId = f.id;
+      marker.on('click', function() {
+        if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'facilityClick', facilityId: f.id }));
+      });
+    });
+    if (data.userLocation) {
+      L.circleMarker([data.userLocation.lat, data.userLocation.lng], { radius: 8, fillColor: '#00ff00', color: '#fff', weight: 2, fillOpacity: 1 }).addTo(map).bindPopup('Your location');
+    }
+  </script>
+</body>
+</html>`;
+};
+
 
 const getFacilityIcon = (type) => {
   const icons = {
@@ -184,6 +235,35 @@ const MapComponent = ({ center, zoom, facilities, userLocation, route, onFacilit
   const memoizedOnFacilityClick = useCallback((facility) => {
     onFacilityClick(facility);
   }, [onFacilityClick]);
+
+  // Native map region (used only when Platform.OS !== 'web' with react-native-maps - kept for compatibility)
+  const nativeRegion = useMemo(() => ({
+    latitude: center?.[0] ?? 15.5,
+    longitude: center?.[1] ?? 30.0,
+    latitudeDelta: zoom ? Math.max(0.5, 12 - zoom) : 6,
+    longitudeDelta: zoom ? Math.max(0.5, 12 - zoom) : 6,
+  }), [center, zoom]);
+
+  // Leaflet HTML for native WebView (Android/iOS) - built at top level for hooks rules
+  const leafletMapHtml = useMemo(
+    () => (Platform.OS === 'web' ? '' : buildLeafletMapHtml(center, zoom, memoizedFacilities, userLocation)),
+    [center, zoom, memoizedFacilities, userLocation]
+  );
+
+  const handleWebViewMessage = useCallback(
+    (event) => {
+      try {
+        const msg = JSON.parse(event.nativeEvent.data);
+        if (msg.type === 'facilityClick' && msg.facilityId != null) {
+          const facility = memoizedFacilities.find((f) => f.id === msg.facilityId);
+          if (facility) memoizedOnFacilityClick(facility);
+        }
+      } catch (e) {
+        // ignore
+      }
+    },
+    [memoizedFacilities, memoizedOnFacilityClick]
+  );
 
   // Load Leaflet CSS and add custom styles for failed facilities on web
   useEffect(() => {
@@ -468,7 +548,30 @@ const MapComponent = ({ center, zoom, facilities, userLocation, route, onFacilit
     );
   }
 
-  // Fallback - always show something visible
+  // Native (Android/iOS): WebView with Leaflet so we don't depend on react-native-maps. Web app unchanged above.
+  if (Platform.OS !== 'web') {
+    try {
+      const { WebView } = require('react-native-webview');
+      return (
+        <View style={styles.container}>
+          <WebView
+            source={{ html: leafletMapHtml }}
+            originWhitelist={['*']}
+            style={styles.nativeMap}
+            scrollEnabled={true}
+            bounces={false}
+            onMessage={handleWebViewMessage}
+            javaScriptEnabled={true}
+            domStorageEnabled={true}
+          />
+        </View>
+      );
+    } catch (e) {
+      console.warn('WebView not available for map:', e);
+    }
+  }
+
+  // Fallback: placeholder (native when WebView fails, or web without Leaflet)
   return (
     <View style={styles.container}>
       <View style={styles.placeholder}>
@@ -483,6 +586,11 @@ const MapComponent = ({ center, zoom, facilities, userLocation, route, onFacilit
             To see the interactive map, install: npm install leaflet react-leaflet --legacy-peer-deps
           </Text>
         )}
+        {Platform.OS === 'android' && (
+          <Text style={styles.placeholderHint}>
+            Use Priority List and facility cards for navigation.
+          </Text>
+        )}
       </View>
     </View>
   );
@@ -495,6 +603,12 @@ const styles = StyleSheet.create({
     height: '100%',
     minHeight: 400,
     backgroundColor: '#e8f4f8', // Light blue to verify rendering
+  },
+  nativeMap: {
+    width: '100%',
+    height: '100%',
+    flex: 1,
+    minHeight: 400,
   },
   placeholder: {
     flex: 1,

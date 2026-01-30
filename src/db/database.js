@@ -1,11 +1,13 @@
 import { Platform } from 'react-native';
 import { initWebDatabase, executeQueryWeb, executeWriteWeb, STORE_NAMES as WEB_STORE_NAMES } from './web_database';
 import { getConnectionMode } from '../utils/connection_state';
+import { openLegacyDatabaseAsync } from './legacy_db_adapter';
 
 let SQLite = null;
 let dbOnline = null;
 let dbOffline = null;
 let useWebFallback = false;
+let useLegacySqlite = false;
 
 try {
   SQLite = require('expo-sqlite');
@@ -44,8 +46,25 @@ export const initDatabase = async () => {
       else throw new Error('expo-sqlite openDatabaseAsync method not found');
     }
 
-    if (!dbOffline) dbOffline = await SQLite.openDatabaseAsync('voltedge_offline.db');
-    if (!dbOnline) dbOnline = await SQLite.openDatabaseAsync('voltedge_online.db');
+    try {
+      if (!dbOffline) dbOffline = await SQLite.openDatabaseAsync('voltedge_offline.db');
+      if (!dbOnline) dbOnline = await SQLite.openDatabaseAsync('voltedge_online.db');
+    } catch (nativeError) {
+      const msg = (nativeError && (nativeError.message || String(nativeError))) || '';
+      const useLegacy =
+        /unimplemented/i.test(msg) ||
+        /database module did not load/i.test(msg) ||
+        /did not load correctly/i.test(msg);
+      if (useLegacy && Platform.OS !== 'web') {
+        console.warn('Native SQLite failed, using legacy adapter:', msg);
+        useLegacySqlite = true;
+        dbOffline = await openLegacyDatabaseAsync('voltedge_offline.db');
+        dbOnline = await openLegacyDatabaseAsync('voltedge_online.db');
+      } else {
+        throw nativeError;
+      }
+    }
+
     await createSchemaForDb(dbOffline);
     await createSchemaForDb(dbOnline);
     return getCurrentDb();

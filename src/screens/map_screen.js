@@ -621,8 +621,8 @@ const MapScreen = () => {
         />
       )}
 
-      {/* Simulation Panel Toggle (Admin Panel) */}
-      <View style={styles.simulationPanel}>
+      {/* Simulation Panel Toggle (Admin Panel) - scrollable on native so all buttons fit */}
+      <View style={[styles.simulationPanel, Platform.OS !== 'web' && styles.simulationPanelNative]}>
         {/* Arrow Toggle Button */}
         <Pressable
           style={({ pressed }) => [styles.simulationToggleArrow, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
@@ -632,20 +632,24 @@ const MapScreen = () => {
             {showSimulationPanel ? '◀' : '▶'}
           </Text>
         </Pressable>
-        
-        {/* Simulation Button (Hidden by default) */}
         {showSimulationPanel && (
-          <>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={Platform.OS !== 'web'}
+            style={Platform.OS !== 'web' ? styles.adminScrollView : undefined}
+            contentContainerStyle={Platform.OS !== 'web' ? styles.adminScrollContent : undefined}
+          >
             <Pressable
               style={({ pressed }) => [
                 styles.onlineOfflineButton,
                 isOnline ? styles.onlineOfflineButtonOnline : styles.onlineOfflineButtonOffline,
                 transitionStyle,
                 { opacity: pressed ? 0.9 : 1 },
+                Platform.OS !== 'web' && styles.adminButtonNative,
               ]}
               onPress={handleToggleOnlineOffline}
             >
-              <Text style={styles.onlineOfflineButtonText}>
+              <Text style={[styles.onlineOfflineButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]}>
                 {isOnline ? 'Go Offline' : 'Go Online'}
               </Text>
             </Pressable>
@@ -655,30 +659,36 @@ const MapScreen = () => {
                 isSimulating && styles.simulationButtonActive,
                 transitionStyle,
                 { opacity: pressed ? 0.9 : 1 },
+                Platform.OS !== 'web' && styles.adminButtonNative,
               ]}
               onPress={toggleSimulation}
             >
-              <Text style={[styles.simulationButtonText, isSimulating && styles.simulationButtonTextActive]}>
-                {isSimulating ? 'Stop Simulation' : 'Simulate Walking'}
+              <Text style={[styles.simulationButtonText, isSimulating && styles.simulationButtonTextActive, Platform.OS !== 'web' && styles.adminButtonTextNative]}>
+                {isSimulating ? 'Stop' : 'Simulate Walking'}
               </Text>
             </Pressable>
-            
-            {/* Failure Simulation Button */}
             <FailureSimulationButton
               isVisible={showSimulationPanel}
               onPress={() => setShowFailureModal(true)}
+              compact={Platform.OS !== 'web'}
             />
-            
-            {/* Resolve Failure Button */}
             {failedFacilitiesList.length > 0 && (
               <Pressable
-                style={({ pressed }) => [styles.resolveFailureButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+                style={({ pressed }) => [styles.resolveFailureButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }, Platform.OS !== 'web' && styles.adminButtonNative]}
                 onPress={() => setShowResolveFailureModal(true)}
               >
-                <Text style={styles.resolveFailureButtonText}>Resolve Failure</Text>
+                <Text style={[styles.resolveFailureButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]}>Resolve</Text>
               </Pressable>
             )}
-          </>
+            <Pressable
+              style={({ pressed }) => [styles.rankingButtonInline, transitionStyle, { opacity: pressed ? 0.9 : 1 }, Platform.OS !== 'web' && styles.adminButtonNative]}
+              onPress={() => setShowRankingList(!showRankingList)}
+            >
+              <Text style={[styles.rankingButtonText, Platform.OS !== 'web' && styles.adminButtonTextNative]}>
+                {showRankingList ? 'Hide List' : 'Priority List'}
+              </Text>
+            </Pressable>
+          </ScrollView>
         )}
       </View>
 
@@ -690,15 +700,17 @@ const MapScreen = () => {
         <Text style={styles.guideButtonText}>?</Text>
       </Pressable>
 
-      {/* Intervention Ranking Toggle */}
-      <Pressable
-        style={({ pressed }) => [styles.rankingButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
-        onPress={() => setShowRankingList(!showRankingList)}
-      >
-        <Text style={styles.rankingButtonText}>
-          {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
-        </Text>
-      </Pressable>
+      {/* Intervention Ranking Toggle - web only (on native it's inside admin ScrollView) */}
+      {Platform.OS === 'web' && (
+        <Pressable
+          style={({ pressed }) => [styles.rankingButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+          onPress={() => setShowRankingList(!showRankingList)}
+        >
+          <Text style={styles.rankingButtonText}>
+            {showRankingList ? 'Hide Priority List' : 'Show Priority List'}
+          </Text>
+        </Pressable>
+      )}
 
       {/* Simulation Joystick */}
       {isSimulating && (
@@ -889,6 +901,40 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     zIndex: 1000,
+  },
+  simulationPanelNative: {
+    maxWidth: '100%',
+  },
+  adminScrollView: {
+    flexGrow: 0,
+    maxHeight: 48,
+  },
+  adminScrollContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: 8,
+  },
+  adminButtonNative: {
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginRight: 4,
+    marginTop: 0,
+    minWidth: 0,
+  },
+  adminButtonTextNative: {
+    fontSize: 12,
+  },
+  rankingButtonInline: {
+    backgroundColor: '#ffffff',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    marginRight: 4,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 4,
   },
   simulationToggleArrow: {
     backgroundColor: 'rgba(0, 0, 0, 0.5)',

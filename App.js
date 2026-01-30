@@ -6,6 +6,7 @@ import { View, Text, StyleSheet, ActivityIndicator, Platform } from 'react-nativ
 import { initDatabase } from './src/db/database';
 import HomeScreen from './src/screens/home_screen';
 import MapScreen from './src/screens/map_screen';
+import ErrorBoundary from './src/components/error_boundary';
 
 const Stack = createNativeStackNavigator();
 
@@ -83,6 +84,7 @@ const App = () => {
 
   if (initError && Platform.OS !== 'web') {
     const isWebDatabaseError = initError.includes('constructor') || initError.includes('NativeDatabase');
+    const isUnimplementedError = initError.includes('Unimplemented');
     
     return (
       <View style={styles.errorContainer}>
@@ -99,6 +101,16 @@ const App = () => {
               3. Restart server: npx expo start --web --clear
             </Text>
           </>
+        ) : isUnimplementedError ? (
+          <>
+            <Text style={styles.errorHint}>
+              Database module did not load correctly on this device.
+            </Text>
+            <Text style={styles.errorSteps}>
+              1. Create a new build: eas build -p android --profile preview{'\n'}
+              2. Uninstall the old APK, then install the new one
+            </Text>
+          </>
         ) : (
           <Text style={styles.errorHint}>
             Please restart the app. If the problem persists, clear app data.
@@ -109,9 +121,10 @@ const App = () => {
   }
   
   return (
-    <NavigationContainer>
-      <StatusBar style="auto" />
-      <Stack.Navigator
+    <ErrorBoundary>
+      <NavigationContainer>
+        <StatusBar style="auto" />
+        <Stack.Navigator
         initialRouteName="Map"
         screenOptions={{
           headerStyle: {
@@ -140,6 +153,7 @@ const App = () => {
         />
       </Stack.Navigator>
     </NavigationContainer>
+    </ErrorBoundary>
   );
 };
 

@@ -2,6 +2,14 @@
 
 VoltEdge is a field-ready decision tool that helps responders map water and electricity disruptions and turn them into ranked intervention actions. Unlike typical apps that show "where things are broken," VoltEdge shows what breaks next, who is at risk, and which repair restores the most service per hour.
 
+## App flow
+
+1. **Sign in** – Choose role: **Control Center** or **Khartoum Response Team** (dropdown + Sign In button).
+2. **Map** – View the dependency-aware map, failure status, admin controls (online/offline, simulate walking, failure simulation, resolve, Priority List, Reported Problems for Control Center).
+3. **Sign out** – From the map screen, sign out returns to the sign-in screen.
+
+The same codebase runs on **web** and **Android/iOS**; the app uses the same UI and functionality, with mobile-specific layout tweaks so everything fits on small screens.
+
 ## Problem Statement
 
 In conflict-affected cities, electricity and water systems are highly interdependent, making infrastructure failures especially severe. Power disruptions can quickly halt water pumps and treatment facilities, cause pressure failures, and cut access to safe water within hours, often without warning. With limited time, fuel, and repair capacity, responders tend to prioritize visible damage rather than actions that would restore water services most effectively. As a result, displaced families and critical facilities such as hospitals and shelters face prolonged water shortages, increased reliance on unsafe sources, and heightened public health risks. Evidence from Sudan shows that persistent power outages disrupt drinking-water supply due to reliance on electric pumps (ACAPS, 2023), while 38% of the population requires WASH assistance due to damaged water and electricity infrastructure (iMMAP, 2024). The International Committee of the Red Cross (2025) further warns that attacks on hospitals and water and power infrastructure can leave civilians without essential services.
@@ -45,6 +53,18 @@ npx expo --version
 npm list --depth=0
 ```
 
+### Scripts
+
+| Command | Description |
+|--------|--------------|
+| `npm start` | Start Expo dev server |
+| `npm run web` | Start and open web |
+| `npm run android` | Start and open Android |
+| `npm run ios` | Start and open iOS |
+| `npm test` | Run tests |
+| `npm run lint` | Run ESLint |
+| `npm run format` | Run Prettier |
+
 ## Running and Testing
 
 ### Web Development
@@ -58,7 +78,7 @@ npx expo start --web
 
 The app will open at `http://localhost:8081` (or the next available port).
 
-### Android Development
+### Android
 
 Run on device or emulator:
 
@@ -84,7 +104,27 @@ The Android app uses the same codebase as the website (sign-in screen, map, past
    Download the APK from the link EAS provides.
 4. **On the phone**: Uninstall any old VoltEdge APK, then install the new APK. This avoids cached state from an older version.
 
+**Local debug APK (optional)**
+
+If you have Android Studio / Android SDK and want a debug APK without EAS:
+
+```bash
+npx expo prebuild -p android
+cd android
+./gradlew assembleDebug
+```
+
+The APK is at `android/app/build/outputs/apk/debug/app-debug.apk`. On Windows use `.\gradlew.bat assembleDebug`.
+
 If the installed app does not show the sign-in page or matches an older design, the APK was built from an older version; rebuild from the current repo and reinstall.
+
+### iOS
+
+Run on device or simulator (macOS with Xcode required):
+
+```bash
+npx expo start --ios
+```
 
 ## Technology Stack
 
@@ -93,10 +133,15 @@ If the installed app does not show the sign-in page or matches an older design, 
 - **React** 18.2.0 & **React DOM** 18.2.0 – UI
 - **React Native** 0.74.5 & **react-native-web** ~0.19.10 – Mobile and web
 - **expo-sqlite** ~14.0.6 – Local SQLite (IndexedDB fallback on web)
+- **expo-font** ~12.0.10 & **@expo-google-fonts/onest** ^0.4.1 – Fonts (Onest)
+- **expo-linear-gradient** ~13.0.2 – Gradients (sign-in, map)
 - **expo-status-bar** ~1.12.1 – Status bar styling
+- **@react-native-async-storage/async-storage** 1.23.1 – Persisted sign-in role (native); web uses localStorage
 - **React Navigation** (@react-navigation/native ^6.1.9, native-stack ^6.9.17) – Navigation
 - **react-native-screens** ~3.31.1, **react-native-safe-area-context** 4.10.5 – Native screens and safe areas
+- **@react-native-masked-view/masked-view** ^0.3.1 – Gradient text (sign-in title on native)
 - **Leaflet** ^1.9.4 & **react-leaflet** ^4.2.1 – Maps (web)
+- **react-native-maps** 1.14.0 – Maps (Android/iOS)
 - **@expo/metro-runtime** ~3.2.3 – Metro bundler runtime
 
 **Development**

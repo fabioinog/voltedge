@@ -60,7 +60,31 @@ The app will open at `http://localhost:8081` (or the next available port).
 
 ### Android Development
 
-#### Work in Progress
+Run on device or emulator:
+
+```bash
+npx expo start --android
+```
+
+**Building an APK (same UI and functionality as the website)**
+
+The Android app uses the same codebase as the website (sign-in screen, map, pastel UI, etc.). To get an APK that matches the current website:
+
+1. **Rebuild from the current code** – The APK bundle is created at build time. Any UI or logic change requires a new build.
+2. **Install dependencies** (including AsyncStorage for sign-in persistence):
+   ```bash
+   npm install
+   ```
+3. **Build with EAS** (recommended):
+   ```bash
+   npm i -g eas-cli
+   eas login
+   eas build -p android --profile preview
+   ```
+   Download the APK from the link EAS provides.
+4. **On the phone**: Uninstall any old VoltEdge APK, then install the new APK. This avoids cached state from an older version.
+
+If the installed app does not show the sign-in page or matches an older design, the APK was built from an older version; rebuild from the current repo and reinstall.
 
 ## Technology Stack
 

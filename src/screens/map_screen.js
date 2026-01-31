@@ -1,7 +1,20 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { View, StyleSheet, Platform, Modal, Text, Pressable, ScrollView, ActivityIndicator } from 'react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { ACCENT_BLUE, ACCENT_BLUE_LIGHT, transitionStyle } from '../theme';
+import { ACCENT_BLUE_LIGHT, transitionStyle } from '../theme';
+
+// Pastel palette (aligned with sign-in screen)
+const PASTEL_BLUE = '#6ea8dc';
+const PASTEL_BG = '#eef6fd';
+const PASTEL_TEXT_MUTED = '#6b7280';
+const PASTEL_TEXT_LIGHT = '#9ca3af';
+const PASTEL_TEXT_DARK = '#374151';
+const PASTEL_BORDER = '#e0eefb';
+const PASTEL_ORANGE = '#d4a574';
+const PASTEL_GREEN = '#7eb87e';
+const PASTEL_RED_TINT = '#fce4ec';
+const PASTEL_RED = '#b85c5c';
+const PASTEL_GRAY_BTN = '#8a9aaa';
 import { executeQuery, executeWrite, initDatabase } from '../db/database';
 import MapComponent from '../components/map_component';
 import FacilityReportModal from '../components/facility_report_modal';
@@ -717,7 +730,7 @@ const MapScreen = () => {
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={ACCENT_BLUE} />
+        <ActivityIndicator size="large" color={PASTEL_BLUE} />
         <Text style={styles.loadingText}>Loading map...</Text>
         <Text style={styles.loadingSubtext}>
           Initializing database and loading facilities...
@@ -831,8 +844,8 @@ const MapScreen = () => {
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={Platform.OS !== 'web'}
-            style={Platform.OS !== 'web' ? styles.adminScrollView : undefined}
-            contentContainerStyle={Platform.OS !== 'web' ? styles.adminScrollContent : undefined}
+            style={Platform.OS !== 'web' ? [styles.adminScrollView, styles.adminScrollViewNative] : undefined}
+            contentContainerStyle={Platform.OS !== 'web' ? [styles.adminScrollContent, styles.adminScrollContentNative] : undefined}
           >
             <Pressable
               style={({ pressed }) => [
@@ -877,7 +890,7 @@ const MapScreen = () => {
                   transitionStyle,
                   { opacity: pressed ? 0.9 : 1 },
                   Platform.OS === 'web' && styles.adminButtonWeb,
-                  Platform.OS !== 'web' && styles.adminButtonNative,
+                  Platform.OS !== 'web' && [styles.adminButtonNative, styles.resolveFailureButtonNative],
                 ]}
                 onPress={() => setShowResolveFailureModal(true)}
               >
@@ -890,7 +903,7 @@ const MapScreen = () => {
                 transitionStyle,
                 { opacity: pressed ? 0.9 : 1 },
                 Platform.OS === 'web' && styles.adminButtonWeb,
-                Platform.OS !== 'web' && styles.adminButtonNative,
+                Platform.OS !== 'web' && [styles.adminButtonNative, styles.rankingButtonInlineNative],
               ]}
               onPress={() => setShowRankingList(!showRankingList)}
             >
@@ -905,7 +918,7 @@ const MapScreen = () => {
                   transitionStyle,
                   { opacity: pressed ? 0.9 : 1 },
                   Platform.OS === 'web' && styles.adminButtonWeb,
-                  Platform.OS !== 'web' && styles.adminButtonNative,
+                  Platform.OS !== 'web' && [styles.adminButtonNative, styles.reportedProblemsButtonNative],
                 ]}
                 onPress={() => setShowReportedProblemsModal(true)}
               >
@@ -920,7 +933,7 @@ const MapScreen = () => {
 
       {/* Guide Button */}
       <Pressable
-        style={({ pressed }) => [styles.guideButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
+        style={({ pressed }) => [styles.guideButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }, Platform.OS !== 'web' && styles.guideButtonNative]}
         onPress={() => setShowGuideModal(true)}
       >
         <Text style={styles.guideButtonText}>?</Text>
@@ -969,7 +982,7 @@ const MapScreen = () => {
 
       {/* Nearest Facility Info - only when Simulate Walking is on */}
       {nearestFacility && !navigationRoute && isSimulating && (
-        <View style={styles.nearestFacilityInfo}>
+        <View style={[styles.nearestFacilityInfo, Platform.OS !== 'web' && styles.nearestFacilityInfoNative]}>
           <Text style={styles.nearestFacilityTitle}>Nearest Facility</Text>
           <Text style={styles.nearestFacilityName}>{nearestFacility.facility.name}</Text>
           <Text style={styles.nearestFacilityDistance}>
@@ -996,9 +1009,9 @@ const MapScreen = () => {
       )}
 
       {/* Signed-in role and Sign out - centered; wrapper uses box-none so it doesn't block admin panel arrow */}
-      <View style={styles.signedInStripWrapper} pointerEvents="box-none">
-        <View style={styles.signedInStrip}>
-          <Text style={styles.signedInLabel}>Signed in as: {ROLE_LABELS[userRole] ?? userRole}</Text>
+      <View style={[styles.signedInStripWrapper, Platform.OS !== 'web' && styles.signedInStripWrapperNative]} pointerEvents="box-none">
+        <View style={[styles.signedInStrip, Platform.OS !== 'web' && styles.signedInStripNative]}>
+          <Text style={[styles.signedInLabel, Platform.OS !== 'web' && styles.signedInLabelNative]} numberOfLines={1}>Signed in as: {ROLE_LABELS[userRole] ?? userRole}</Text>
           <Pressable
             style={({ pressed }) => [styles.signOutButton, transitionStyle, { opacity: pressed ? 0.9 : 1 }]}
             onPress={handleSignOut}
@@ -1009,8 +1022,8 @@ const MapScreen = () => {
       </View>
 
       {/* Online/Offline Indicator */}
-      <View style={[styles.statusIndicator, isOnline ? styles.online : styles.offline]}>
-        <Text style={styles.statusText}>
+      <View style={[styles.statusIndicator, isOnline ? styles.online : styles.offline, Platform.OS !== 'web' && styles.statusIndicatorNative]}>
+        <Text style={[styles.statusText, Platform.OS !== 'web' && styles.statusTextNative]}>
           {isOnline ? '● Online' : '○ Offline'}
         </Text>
       </View>
@@ -1058,16 +1071,22 @@ const MapScreen = () => {
           : actionToasts;
         if (toastsToShow.length === 0) return null;
         return (
-        <View style={styles.actionToastContainer}>
+        <View style={[styles.actionToastContainer, Platform.OS !== 'web' && styles.actionToastContainerNative]}>
           {toastsToShow.map((toast, idx) => (
             <View
               key={toast.id}
               style={[
                 styles.actionToast,
                 idx > 0 && styles.actionToastStacked,
+                idx > 0 && Platform.OS !== 'web' && styles.actionToastStackedNative,
               ]}
             >
-              <View style={[styles.actionToastContent, toast.status === 'khartoum_pending' && styles.actionToastContentUniform]}>
+              <View style={[
+                styles.actionToastContent,
+                toast.status === 'khartoum_pending' && styles.actionToastContentUniform,
+                Platform.OS !== 'web' && styles.actionToastContentNative,
+                Platform.OS !== 'web' && toast.status === 'khartoum_pending' && styles.actionToastContentUniformNative,
+              ]}>
                 <Text style={styles.actionToastTitle}>Action status</Text>
                 <Text style={styles.actionToastLabel}>Facility</Text>
                 <Text style={styles.actionToastFacilityName}>{toast.facilityName}</Text>
@@ -1093,7 +1112,7 @@ const MapScreen = () => {
                     <View style={styles.actionToastStatusRow}>
                       {toast.status === 'in_progress' && (
                         <>
-                          <ActivityIndicator size="small" color={ACCENT_BLUE} />
+                          <ActivityIndicator size="small" color={PASTEL_BLUE} />
                           <Text style={[styles.actionToastStatusText, styles.actionToastTextWithSpinner]}>Action in progress...</Text>
                         </>
                       )}
@@ -1146,7 +1165,7 @@ const MapScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: PASTEL_BG,
     width: '100%',
     height: '100%',
     minHeight: 400, // Ensure minimum height
@@ -1163,22 +1182,22 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: PASTEL_BG,
   },
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
     marginBottom: 8,
   },
   loadingSubtext: {
     fontSize: 12,
-    color: '#999999',
+    color: PASTEL_TEXT_LIGHT,
     textAlign: 'center',
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     justifyContent: 'flex-end',
   },
   modalContent: {
@@ -1191,18 +1210,18 @@ const styles = StyleSheet.create({
   modalTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     marginBottom: 8,
     textAlign: 'left',
   },
   modalSubtitle: {
     fontSize: 16,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
     marginBottom: 4,
     textAlign: 'left',
   },
   reportButton: {
-    backgroundColor: ACCENT_BLUE,
+    backgroundColor: PASTEL_BLUE,
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
@@ -1214,14 +1233,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   closeButton: {
-    backgroundColor: '#e0e0e0',
+    backgroundColor: PASTEL_BORDER,
     padding: 16,
     borderRadius: 8,
     marginTop: 12,
     alignItems: 'center',
   },
   closeButtonText: {
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     fontSize: 16,
   },
   simulationPanel: {
@@ -1234,15 +1253,25 @@ const styles = StyleSheet.create({
   },
   simulationPanelNative: {
     maxWidth: '100%',
+    right: 8,
+    top: 8,
   },
   adminScrollView: {
     flexGrow: 0,
     maxHeight: 48,
   },
+  adminScrollViewNative: {
+    maxHeight: 44,
+    flexGrow: 0,
+  },
   adminScrollContent: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingRight: 8,
+  },
+  adminScrollContentNative: {
+    paddingRight: 12,
+    paddingVertical: 4,
   },
   adminButtonNative: {
     paddingVertical: 8,
@@ -1253,6 +1282,14 @@ const styles = StyleSheet.create({
   },
   adminButtonTextNative: {
     fontSize: 12,
+  },
+  rankingButtonInlineNative: {
+    minWidth: 88,
+    marginRight: 6,
+  },
+  reportedProblemsButtonNative: {
+    minWidth: 88,
+    marginRight: 6,
   },
   adminButtonWeb: {
     minWidth: 140,
@@ -1294,7 +1331,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   reportedProblemsButtonText: {
-    color: ACCENT_BLUE,
+    color: PASTEL_BLUE,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -1315,7 +1352,7 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   simulationToggleArrow: {
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: 'rgba(0, 0, 0, 0.4)',
     padding: 8,
     borderRadius: 4,
     borderTopLeftRadius: 8,
@@ -1349,10 +1386,10 @@ const styles = StyleSheet.create({
     minWidth: 100,
   },
   onlineOfflineButtonOnline: {
-    backgroundColor: ACCENT_BLUE,
+    backgroundColor: PASTEL_BLUE,
   },
   onlineOfflineButtonOffline: {
-    backgroundColor: '#666666',
+    backgroundColor: PASTEL_GRAY_BTN,
   },
   onlineOfflineButtonText: {
     color: '#ffffff',
@@ -1372,10 +1409,10 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   simulationButtonActive: {
-    backgroundColor: '#ff9900',
+    backgroundColor: PASTEL_ORANGE,
   },
   simulationButtonText: {
-    color: ACCENT_BLUE,
+    color: PASTEL_BLUE,
     fontSize: 14,
     fontWeight: 'bold',
   },
@@ -1383,7 +1420,7 @@ const styles = StyleSheet.create({
     color: '#ffffff',
   },
   resolveFailureButton: {
-    backgroundColor: '#00cc00',
+    backgroundColor: PASTEL_GREEN,
     padding: 12,
     borderRadius: 8,
     borderTopLeftRadius: 0,
@@ -1396,6 +1433,11 @@ const styles = StyleSheet.create({
     elevation: 4,
     alignItems: 'center',
     minWidth: 120,
+  },
+  resolveFailureButtonNative: {
+    minWidth: 80,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
   },
   resolveFailureButtonText: {
     color: '#ffffff',
@@ -1419,12 +1461,12 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   rankingButtonText: {
-    color: ACCENT_BLUE,
+    color: PASTEL_BLUE,
     fontSize: 14,
     fontWeight: 'bold',
   },
   navigateButton: {
-    backgroundColor: '#00cc00',
+    backgroundColor: PASTEL_GREEN,
     padding: 16,
     borderRadius: 8,
     marginTop: 16,
@@ -1449,27 +1491,35 @@ const styles = StyleSheet.create({
     elevation: 4,
     minWidth: 200,
   },
+  nearestFacilityInfoNative: {
+    top: 120,
+    left: 8,
+    right: 8,
+    minWidth: 0,
+    maxWidth: '100%',
+    padding: 10,
+  },
   nearestFacilityTitle: {
     fontSize: 12,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
     marginBottom: 4,
     textAlign: 'left',
   },
   nearestFacilityName: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     marginBottom: 4,
     textAlign: 'left',
   },
   nearestFacilityDistance: {
     fontSize: 14,
-    color: ACCENT_BLUE,
+    color: PASTEL_BLUE,
     marginBottom: 8,
     textAlign: 'left',
   },
   nearestFacilityButton: {
-    backgroundColor: ACCENT_BLUE,
+    backgroundColor: PASTEL_BLUE,
     padding: 8,
     borderRadius: 4,
     alignItems: 'center',
@@ -1487,6 +1537,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     zIndex: 999,
   },
+  signedInStripWrapperNative: {
+    top: 8,
+    left: 8,
+    right: 56,
+    alignItems: 'center',
+  },
   signedInStrip: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1500,14 +1556,23 @@ const styles = StyleSheet.create({
     shadowRadius: 2,
     elevation: 3,
   },
+  signedInStripNative: {
+    paddingVertical: 6,
+    paddingHorizontal: 8,
+    flexShrink: 1,
+  },
+  signedInLabelNative: {
+    fontSize: 11,
+    marginRight: 8,
+  },
   signedInLabel: {
     fontSize: 12,
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     marginRight: 12,
     fontWeight: '500',
   },
   signOutButton: {
-    backgroundColor: '#666666',
+    backgroundColor: PASTEL_GRAY_BTN,
     paddingVertical: 6,
     paddingHorizontal: 12,
     borderRadius: 4,
@@ -1525,16 +1590,24 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#ffffff',
   },
+  statusIndicatorNative: {
+    top: 8,
+    left: 8,
+    padding: 6,
+  },
+  statusTextNative: {
+    fontSize: 11,
+  },
   online: {
     backgroundColor: ACCENT_BLUE_LIGHT,
   },
   offline: {
-    backgroundColor: '#ffebee',
+    backgroundColor: PASTEL_RED_TINT,
   },
   statusText: {
     fontSize: 12,
     fontWeight: 'bold',
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     textAlign: 'left',
   },
   debugInfo: {
@@ -1548,24 +1621,24 @@ const styles = StyleSheet.create({
   },
   debugText: {
     fontSize: 12,
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
   },
   noDataContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#f5f5f5',
+    backgroundColor: PASTEL_BG,
     padding: 24,
   },
   noDataText: {
     fontSize: 18,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
     marginBottom: 8,
     textAlign: 'center',
   },
   noDataSubtext: {
     fontSize: 14,
-    color: '#999999',
+    color: PASTEL_TEXT_LIGHT,
     textAlign: 'center',
   },
   emptyState: {
@@ -1580,13 +1653,13 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 16,
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     marginBottom: 8,
     textAlign: 'center',
   },
   emptyStateSubtext: {
     fontSize: 12,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
     textAlign: 'center',
   },
   actionToastContainer: {
@@ -1600,11 +1673,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'flex-end',
   },
+  actionToastContainerNative: {
+    bottom: 12,
+    left: 8,
+    right: 8,
+  },
   actionToast: {
     alignItems: 'center',
   },
   actionToastStacked: {
     marginLeft: 8,
+  },
+  actionToastStackedNative: {
+    marginLeft: 6,
+    marginTop: 6,
   },
   actionToastContent: {
     backgroundColor: '#ffffff',
@@ -1618,23 +1700,33 @@ const styles = StyleSheet.create({
     minWidth: 260,
     maxWidth: 400,
   },
+  actionToastContentNative: {
+    minWidth: 0,
+    maxWidth: '100%',
+    padding: 12,
+  },
   actionToastContentUniform: {
     width: 320,
     minHeight: 240,
   },
+  actionToastContentUniformNative: {
+    width: undefined,
+    maxWidth: '100%',
+    minHeight: 200,
+  },
   actionToastTitle: {
     fontSize: 18,
     fontWeight: 'bold',
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     marginBottom: 10,
     borderBottomWidth: 2,
-    borderBottomColor: ACCENT_BLUE,
+    borderBottomColor: PASTEL_BLUE,
     paddingBottom: 8,
     textAlign: 'left',
   },
   actionToastLabel: {
     fontSize: 12,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
     marginTop: 8,
     marginBottom: 2,
     textAlign: 'left',
@@ -1642,12 +1734,12 @@ const styles = StyleSheet.create({
   actionToastFacilityName: {
     fontSize: 15,
     fontWeight: '600',
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     textAlign: 'left',
   },
   actionToastActionText: {
     fontSize: 14,
-    color: '#333333',
+    color: PASTEL_TEXT_DARK,
     lineHeight: 20,
     textAlign: 'left',
     marginBottom: 4,
@@ -1664,18 +1756,18 @@ const styles = StyleSheet.create({
   },
   actionToastTextWithSpinner: {
     marginLeft: 8,
-    color: '#666666',
+    color: PASTEL_TEXT_MUTED,
   },
   actionToastStatusFailure: {
-    color: '#b71c1c',
+    color: PASTEL_RED,
     fontWeight: '600',
   },
   actionToastStatusResolved: {
-    color: '#2e7d32',
+    color: PASTEL_GREEN,
     fontWeight: '600',
   },
   actionToastClose: {
-    backgroundColor: ACCENT_BLUE,
+    backgroundColor: PASTEL_BLUE,
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -1693,7 +1785,7 @@ const styles = StyleSheet.create({
     width: 48,
     height: 48,
     borderRadius: 24,
-    backgroundColor: ACCENT_BLUE,
+    backgroundColor: PASTEL_BLUE,
     justifyContent: 'center',
     alignItems: 'center',
     shadowColor: '#000',
@@ -1702,6 +1794,13 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 5,
     zIndex: 1000,
+  },
+  guideButtonNative: {
+    bottom: 12,
+    right: 12,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
   },
   guideButtonText: {
     fontSize: 24,
@@ -1719,7 +1818,7 @@ const styles = StyleSheet.create({
   khartoumCommandButtonResolved: {
     flex: 1,
     marginRight: 6,
-    backgroundColor: '#2e7d32',
+    backgroundColor: PASTEL_GREEN,
     paddingVertical: 12,
     paddingHorizontal: 16,
     borderRadius: 8,
@@ -1728,7 +1827,7 @@ const styles = StyleSheet.create({
   khartoumCommandButtonStillFailing: {
     flex: 1,
     marginLeft: 6,
-    backgroundColor: '#666666',
+    backgroundColor: PASTEL_GRAY_BTN,
     paddingVertical: 10,
     paddingHorizontal: 16,
     borderRadius: 8,

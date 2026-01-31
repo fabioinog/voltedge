@@ -45,7 +45,7 @@ const FailureDisplayPanel = ({ failedFacilities, atRiskFacilities, onFacilityCli
   }
 
   return (
-    <View style={styles.panel}>
+    <View style={[styles.panel, Platform.OS !== 'web' && styles.panelNative]}>
       <Text style={styles.panelTitle}>Failure Status</Text>
       <ScrollView
         style={styles.scrollArea}
@@ -185,6 +185,15 @@ const styles = StyleSheet.create({
     elevation: 5,
     zIndex: 1000,
     overflow: 'hidden',
+  },
+  panelNative: {
+    left: 8,
+    top: 136,
+    width: '52%',
+    maxWidth: 220,
+    height: '42%',
+    maxHeight: 280,
+    padding: 10,
   },
   panelTitle: {
     fontSize: 18,
